@@ -1,0 +1,6 @@
+{
+  "name": "Meu Mundo Minha Vida",
+  "description": "Companheiro pessoal diário com agenda, devocional, resumo de produtividade, música em destaque e gestão de perfil.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

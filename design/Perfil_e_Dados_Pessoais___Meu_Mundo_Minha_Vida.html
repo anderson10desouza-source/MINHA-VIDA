@@ -1,0 +1,415 @@
+<!DOCTYPE html><html lang="pt-BR" class="dark"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Perfil e Dados Pessoais — Meu Mundo Minha Vida</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script id="tailwind-config" data-stitch-original-src="62074bb2c73d0d71===../../tailwind.config.js">/** @type {import('tailwindcss').Config} */
+globalThis.tailwind = globalThis.tailwind || {};
+globalThis.tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        'accent-gold': '#D4A23E',
+        'cat-blue': '#60A5FA',
+        'cat-emerald': '#34D399',
+        'cat-violet': '#A78BFA',
+        'light-primary': '#7C5800',
+        'light-on-primary': '#FFFFFF',
+        'light-primary-container': '#D4A23E',
+        'light-on-primary-container': '#533A00',
+        'light-secondary': '#715B33',
+        'light-on-secondary': '#FFFFFF',
+        'light-secondary-container': '#FADCAA',
+        'light-on-secondary-container': '#755F37',
+        'light-tertiary': '#2E5F9D',
+        'light-on-tertiary': '#FFFFFF',
+        'light-tertiary-container': '#7FACEF',
+        'light-on-tertiary-container': '#003F78',
+        'light-error': '#BA1A1A',
+        'light-on-error': '#FFFFFF',
+        'light-error-container': '#FFDAD6',
+        'light-on-error-container': '#93000A',
+        'light-background': '#F9F9FF',
+        'light-on-background': '#0E1C2F',
+        'light-surface': '#F9F9FF',
+        'light-surface-dim': '#CDDBF5',
+        'light-surface-bright': '#F9F9FF',
+        'light-surface-container-lowest': '#FFFFFF',
+        'light-surface-container-low': '#F0F3FF',
+        'light-surface-container': '#E7EEFF',
+        'light-surface-container-high': '#DEE9FF',
+        'light-surface-container-highest': '#D5E3FD',
+        'light-on-surface': '#0E1C2F',
+        'light-surface-variant': '#EFE0CC',
+        'light-on-surface-variant': '#4F4536',
+        'light-outline': '#817564',
+        'light-outline-variant': '#D3C5B0',
+        'light-inverse-surface': '#243145',
+        'light-inverse-on-surface': '#EBF1FF',
+        'light-inverse-primary': '#F3BE57',
+        'dark-primary': '#F3BE57',
+        'dark-on-primary': '#412D00',
+        'dark-primary-container': '#D4A23E',
+        'dark-on-primary-container': '#533A00',
+        'dark-secondary': '#E0C392',
+        'dark-on-secondary': '#3F2D0A',
+        'dark-secondary-container': '#57441E',
+        'dark-on-secondary-container': '#CDB182',
+        'dark-tertiary': '#A6C8FF',
+        'dark-on-tertiary': '#00315F',
+        'dark-tertiary-container': '#7FACEF',
+        'dark-on-tertiary-container': '#003F78',
+        'dark-error': '#FFB4AB',
+        'dark-on-error': '#690005',
+        'dark-error-container': '#93000A',
+        'dark-on-error-container': '#FFDAD6',
+        'dark-background': '#051426',
+        'dark-on-background': '#EBF1FF',
+        'dark-surface': '#051426',
+        'dark-surface-dim': '#051426',
+        'dark-surface-bright': '#2D3A4E',
+        'dark-surface-container-lowest': '#020E21',
+        'dark-surface-container-low': '#0E1C2F',
+        'dark-surface-container': '#122033',
+        'dark-surface-container-high': '#1D2A3E',
+        'dark-surface-container-highest': '#28354A',
+        'dark-on-surface': '#EBF1FF',
+        'dark-surface-variant': '#4F4536',
+        'dark-on-surface-variant': '#B9C7E1',
+        'dark-outline': '#9B8F7D',
+        'dark-outline-variant': '#28354A',
+        'dark-inverse-surface': '#D5E3FD',
+        'dark-inverse-on-surface': '#243145',
+        'dark-inverse-primary': '#7C5800',
+      },
+      borderRadius: {
+        'sm': '6px',
+        'DEFAULT': '10px',
+        'md': '12px',
+        'lg': '16px',
+        'xl': '24px',
+        'full': '9999px',
+      },
+      spacing: {
+        'gutter-xs': '4px',
+        'gutter-sm': '8px',
+        'gutter-md': '12px',
+        'gutter-lg': '16px',
+        'gutter-xl': '24px',
+        'section': '32px',
+        'page-margin': '16px',
+      },
+      fontFamily: {
+        'display': ['"Mulish"', 'sans-serif'],
+        'headline': ['"Mulish"', 'sans-serif'],
+        'title': ['"Mulish"', 'sans-serif'],
+        'body': ['"Instrument Sans"', 'sans-serif'],
+        'label': ['"Instrument Sans"', 'sans-serif'],
+        'mono': ['"Source Code Pro"', 'monospace'],
+      },
+      fontSize: {
+        'display-lg': ['36px', { lineHeight: '42px', letterSpacing: '-0.5px', fontWeight: '700' }],
+        'display-lg-mobile': ['28px', { lineHeight: '34px', letterSpacing: '-0.25px', fontWeight: '700' }],
+        'headline-lg': ['24px', { lineHeight: '30px', letterSpacing: '-0.2px', fontWeight: '700' }],
+        'headline-md': ['20px', { lineHeight: '26px', letterSpacing: '-0.1px', fontWeight: '700' }],
+        'title-md': ['16px', { lineHeight: '22px', letterSpacing: '0px', fontWeight: '600' }],
+        'body-md': ['14px', { lineHeight: '21px', letterSpacing: '0px', fontWeight: '400' }],
+        'body-sm': ['12px', { lineHeight: '18px', letterSpacing: '0.1px', fontWeight: '400' }],
+        'label-lg': ['14px', { lineHeight: '20px', letterSpacing: '0.1px', fontWeight: '600' }],
+        'label-sm': ['11px', { lineHeight: '16px', letterSpacing: '0.2px', fontWeight: '500' }],
+        'mono-md': ['14px', { lineHeight: '20px', letterSpacing: '0px', fontWeight: '600' }],
+      },
+      transitionDuration: {
+        'state-change': '120ms',
+        'surface-enter': '240ms',
+        'surface-exit': '150ms',
+      },
+      transitionDelay: {
+        'state-change': '0ms',
+        'surface-enter': '0ms',
+        'surface-exit': '0ms',
+      },
+      transitionTimingFunction: {
+        'state-change': 'ease-out',
+        'surface-enter': 'cubic-bezier(0.2, 0, 0, 1)',
+        'surface-exit': 'cubic-bezier(0.3, 0, 1, 1)',
+      },
+    },
+  },
+};
+if (typeof module !== 'undefined') module.exports = globalThis.tailwind.config;
+</script>
+  <link href="https://fonts.googleapis.com/css2?family=Mulish:wght@600;700&amp;family=Instrument+Sans:wght@400;500;600&amp;family=Source+Code+Pro:wght@600&amp;display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet">
+  <style>
+    .material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp, .material-icons {
+      display: inline-block;
+      width: 1em;
+      height: 1em;
+      line-height: 1 !important;
+      box-sizing: content-box;
+      overflow: hidden;
+      white-space: nowrap;
+      direction: ltr;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body class="bg-dark-surface text-dark-on-surface font-body antialiased">
+  <div class="min-h-screen bg-dark-surface text-dark-on-surface flex flex-col max-w-md mx-auto relative">
+
+    <!-- Contextual Header -->
+    <header class="px-page-margin pt-gutter-xl pb-gutter-lg flex items-center justify-between gap-gutter-md">
+      <a href="../inicio/Inicio.html" data-component-id="button-icon" data-component-type="button" data-component-variant="icon" aria-label="Voltar para Início" class="inline-flex items-center justify-center w-9 h-9 rounded-full text-dark-on-surface hover:bg-dark-surface-container-high transition-colors duration-state-change ease-state-change focus-visible:outline focus-visible:outline-2 focus-visible:outline-dark-primary shrink-0">
+        <span class="material-symbols-outlined text-title-md">arrow_back</span>
+      </a>
+
+      <h1 data-design-text-token="headline-md" class="font-headline text-headline-md text-dark-on-surface text-center flex-1 min-w-0">
+        Perfil e Dados Pessoais
+      </h1>
+
+      <div class="w-9 h-9 shrink-0" aria-hidden="true"></div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="px-page-margin pb-24 flex flex-col gap-gutter-md flex-1">
+
+      <!-- Identity Block -->
+      <section aria-label="Identidade do usuário" data-component-id="card-elevated" data-component-type="card" data-component-variant="elevated" class="rounded-lg bg-dark-surface-container-low border border-dark-outline-variant p-gutter-lg flex items-center gap-gutter-lg">
+        <button id="btn-edit-avatar" type="button" data-component-id="avatar-editable" data-component-type="avatar" data-component-variant="editable" aria-label="Editar foto de perfil" class="relative w-16 h-16 rounded-full border-2 border-accent-gold overflow-hidden bg-dark-surface-container shrink-0 group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-dark-primary">
+          <img src="https://lh3.googleusercontent.com/aida/ALJJyrDczBogeUte1l0iH3AefQRLSZ6wyyl69WXbZfsneQ4bm1D4BOyP2GXOAXHm9CK4kPtCtVnfFF8on9sdmSOIHJFBmaou9LK0MeV6IOanO0KeVLMlwt6NNGh-kJ8rHF0k5h99Y37iSka1eXPv01F0dovCUXHSQROqQFe5Bo7vF-BY-PZwhPTzwD88um83Vis-iARIqmf5cIguGF8nE2C0Nsmn1oBgFoWdTHnCczgyTzTIN9BOulWpWsVeRg" alt="Anderson Oliveira" class="w-full h-full object-cover" data-stitch-original-src="af60be1dc241ebb4===../../images/avatar_anderson.jpg">
+          <span class="absolute inset-0 bg-dark-surface/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-state-change" aria-hidden="true">
+            <span class="material-symbols-outlined text-title-md text-dark-on-surface">photo_camera</span>
+          </span>
+        </button>
+
+        <div class="flex flex-col gap-gutter-xs min-w-0 flex-1">
+          <h2 id="profile-display-name" data-design-text-token="title-md" class="font-headline text-title-md text-dark-on-surface truncate">
+            Anderson Oliveira
+          </h2>
+          <p id="profile-display-email" data-design-text-token="body-sm" class="font-body text-body-sm text-dark-on-surface-variant truncate">
+            anderson.oliveira@email.com
+          </p>
+          <span data-design-text-token="label-sm" class="font-body text-label-sm text-dark-primary tabular-nums">
+            Membro desde Julho de 2025
+          </span>
+        </div>
+      </section>
+
+      <!-- Personal Data Form -->
+      <section aria-labelledby="heading-dados-pessoais" data-component-id="card-elevated" data-component-type="card" data-component-variant="elevated" class="rounded-lg bg-dark-surface-container-low border border-dark-outline-variant p-gutter-lg flex flex-col gap-gutter-md">
+        <header class="flex items-center gap-gutter-sm">
+          <span class="material-symbols-outlined text-title-md text-dark-primary" aria-hidden="true">badge</span>
+          <h2 id="heading-dados-pessoais" data-design-text-token="title-md" class="font-headline text-title-md text-dark-on-surface">
+            Dados Pessoais
+          </h2>
+        </header>
+
+        <form id="profile-form" class="flex flex-col gap-gutter-md">
+          <div class="flex flex-col gap-gutter-xs">
+            <label for="input-fullname" data-design-text-token="label-sm" class="font-body text-label-sm text-dark-on-surface-variant">
+              Nome completo
+            </label>
+            <input id="input-fullname" type="text" value="Anderson Oliveira" required class="rounded bg-dark-surface-container border border-dark-outline-variant text-dark-on-surface font-body text-body-md px-gutter-md py-gutter-sm focus:border-dark-primary focus:ring-0">
+          </div>
+
+          <div class="flex flex-col gap-gutter-xs">
+            <label for="input-email" data-design-text-token="label-sm" class="font-body text-label-sm text-dark-on-surface-variant">
+              E-mail
+            </label>
+            <input id="input-email" type="email" value="anderson.oliveira@email.com" required class="rounded bg-dark-surface-container border border-dark-outline-variant text-dark-on-surface font-body text-body-md px-gutter-md py-gutter-sm focus:border-dark-primary focus:ring-0">
+          </div>
+
+          <div class="grid grid-cols-2 gap-gutter-md">
+            <div class="flex flex-col gap-gutter-xs">
+              <label for="input-phone" data-design-text-token="label-sm" class="font-body text-label-sm text-dark-on-surface-variant">
+                Telefone
+              </label>
+              <input id="input-phone" type="tel" value="(11) 98432-1904" class="rounded bg-dark-surface-container border border-dark-outline-variant text-dark-on-surface font-body text-body-md tabular-nums px-gutter-md py-gutter-sm focus:border-dark-primary focus:ring-0">
+            </div>
+
+            <div class="flex flex-col gap-gutter-xs">
+              <label for="input-birthdate" data-design-text-token="label-sm" class="font-body text-label-sm text-dark-on-surface-variant">
+                Nascimento
+              </label>
+              <input id="input-birthdate" type="text" value="14/05/1992" class="rounded bg-dark-surface-container border border-dark-outline-variant text-dark-on-surface font-body text-body-md tabular-nums px-gutter-md py-gutter-sm focus:border-dark-primary focus:ring-0">
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-gutter-xs">
+            <label for="input-city" data-design-text-token="label-sm" class="font-body text-label-sm text-dark-on-surface-variant">
+              Cidade / Estado
+            </label>
+            <input id="input-city" type="text" value="São Paulo, SP" class="rounded bg-dark-surface-container border border-dark-outline-variant text-dark-on-surface font-body text-body-md px-gutter-md py-gutter-sm focus:border-dark-primary focus:ring-0">
+          </div>
+
+          <button data-component-id="button-primary" data-component-type="button" data-component-variant="primary" type="submit" class="w-full inline-flex items-center justify-center rounded-full bg-dark-primary text-dark-on-primary px-5 py-2.5 font-body text-label-lg transition-colors duration-state-change ease-state-change hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-dark-primary active:scale-95">
+            <span data-design-text-token="label-lg">Salvar Alterações</span>
+          </button>
+        </form>
+      </section>
+
+      <!-- Account Preferences -->
+      <section aria-labelledby="heading-preferencias" data-component-id="card-elevated" data-component-type="card" data-component-variant="elevated" class="rounded-lg bg-dark-surface-container-low border border-dark-outline-variant p-gutter-lg flex flex-col gap-gutter-md">
+        <header class="flex items-center gap-gutter-sm">
+          <span class="material-symbols-outlined text-title-md text-dark-on-surface-variant" aria-hidden="true">tune</span>
+          <h2 id="heading-preferencias" data-design-text-token="title-md" class="font-headline text-title-md text-dark-on-surface">
+            Preferências e Segurança
+          </h2>
+        </header>
+
+        <div class="flex flex-col gap-gutter-md">
+          <div class="flex items-center justify-between gap-gutter-md">
+            <div class="flex flex-col">
+              <span data-design-text-token="body-md" class="font-body text-body-md text-dark-on-surface">Devocional diário</span>
+              <span data-design-text-token="body-sm" class="font-body text-body-sm text-dark-on-surface-variant tabular-nums">Lembrete às 07:00</span>
+            </div>
+            <button type="button" role="switch" aria-checked="true" aria-label="Alternar lembrete de devocional diário" class="toggle-switch relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border border-dark-outline-variant bg-dark-primary transition-colors duration-state-change ease-state-change focus-visible:outline focus-visible:outline-2 focus-visible:outline-dark-primary">
+              <span class="toggle-knob pointer-events-none inline-block h-5 w-5 translate-x-5 rounded-full bg-dark-on-primary transition-transform duration-state-change ease-state-change"></span>
+            </button>
+          </div>
+
+          <div class="border-t border-dark-outline-variant"></div>
+
+          <div class="flex items-center justify-between gap-gutter-md">
+            <div class="flex flex-col">
+              <span data-design-text-token="body-md" class="font-body text-body-md text-dark-on-surface">Alertas da agenda</span>
+              <span data-design-text-token="body-sm" class="font-body text-body-sm text-dark-on-surface-variant tabular-nums">15 min antes do horário</span>
+            </div>
+            <button type="button" role="switch" aria-checked="true" aria-label="Alternar alertas da agenda" class="toggle-switch relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border border-dark-outline-variant bg-dark-primary transition-colors duration-state-change ease-state-change focus-visible:outline focus-visible:outline-2 focus-visible:outline-dark-primary">
+              <span class="toggle-knob pointer-events-none inline-block h-5 w-5 translate-x-5 rounded-full bg-dark-on-primary transition-transform duration-state-change ease-state-change"></span>
+            </button>
+          </div>
+
+          <div class="border-t border-dark-outline-variant"></div>
+
+          <button id="btn-change-password" type="button" class="flex items-center justify-between gap-gutter-md py-gutter-xs text-left rounded transition-colors duration-state-change hover:text-dark-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-dark-primary">
+            <div class="flex items-center gap-gutter-sm">
+              <span class="material-symbols-outlined text-title-md text-dark-on-surface-variant" aria-hidden="true">lock</span>
+              <span data-design-text-token="body-md" class="font-body text-body-md text-dark-on-surface">Alterar senha de acesso</span>
+            </div>
+            <span class="material-symbols-outlined text-title-md text-dark-on-surface-variant" aria-hidden="true">chevron_right</span>
+          </button>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Save Confirmation Toast (hidden by default) -->
+    <div id="save-toast" role="status" aria-live="polite" class="hidden fixed bottom-20 inset-x-page-margin z-30 max-w-md mx-auto rounded-md bg-dark-surface-container-high border border-dark-primary px-gutter-lg py-gutter-md flex items-center gap-gutter-sm">
+      <span class="material-symbols-outlined text-title-md text-cat-emerald" aria-hidden="true">check_circle</span>
+      <span id="save-toast-text" data-design-text-token="body-md" class="font-body text-body-md text-dark-on-surface">Dados pessoais atualizados com sucesso.</span>
+    </div>
+
+    <!-- Bottom Navigation Shell -->
+    <nav aria-label="Navegação principal" class="fixed bottom-0 inset-x-0 z-20 max-w-md mx-auto bg-dark-surface-container-lowest border-t border-dark-outline-variant px-gutter-sm py-gutter-sm">
+      <ul class="grid grid-cols-5 items-center">
+        <li>
+          <a href="../inicio/Inicio.html" class="flex flex-col items-center justify-center gap-gutter-xs py-gutter-xs text-dark-on-surface-variant hover:text-dark-on-surface transition-colors duration-state-change">
+            <span class="material-symbols-outlined text-headline-md">home</span>
+            <span data-design-text-token="label-sm" class="font-body text-label-sm">Início</span>
+          </a>
+        </li>
+        <li>
+          <a href="#explorar" class="flex flex-col items-center justify-center gap-gutter-xs py-gutter-xs text-dark-on-surface-variant hover:text-dark-on-surface transition-colors duration-state-change">
+            <span class="material-symbols-outlined text-headline-md">search</span>
+            <span data-design-text-token="label-sm" class="font-body text-label-sm">Explorar</span>
+          </a>
+        </li>
+        <li>
+          <a href="#favoritos" class="flex flex-col items-center justify-center gap-gutter-xs py-gutter-xs text-dark-on-surface-variant hover:text-dark-on-surface transition-colors duration-state-change">
+            <span class="material-symbols-outlined text-headline-md">favorite</span>
+            <span data-design-text-token="label-sm" class="font-body text-label-sm">Favoritos</span>
+          </a>
+        </li>
+        <li>
+          <a href="#contatos" class="flex flex-col items-center justify-center gap-gutter-xs py-gutter-xs text-dark-on-surface-variant hover:text-dark-on-surface transition-colors duration-state-change">
+            <span class="material-symbols-outlined text-headline-md">person</span>
+            <span data-design-text-token="label-sm" class="font-body text-label-sm">Contatos</span>
+          </a>
+        </li>
+        <li>
+          <a href="#mais" class="flex flex-col items-center justify-center gap-gutter-xs py-gutter-xs text-dark-on-surface-variant hover:text-dark-on-surface transition-colors duration-state-change">
+            <span class="material-symbols-outlined text-headline-md">apps</span>
+            <span data-design-text-token="label-sm" class="font-body text-label-sm">Mais</span>
+          </a>
+        </li>
+      </ul>
+    </nav>
+
+  </div>
+
+  <script>
+    (function () {
+      var form = document.getElementById('profile-form');
+      var displayName = document.getElementById('profile-display-name');
+      var displayEmail = document.getElementById('profile-display-email');
+      var toast = document.getElementById('save-toast');
+      var toastText = document.getElementById('save-toast-text');
+      var toastTimer = null;
+
+      function showToast(msg) {
+        if (!toast || !toastText) return;
+        toastText.textContent = msg;
+        toast.classList.remove('hidden');
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () {
+          toast.classList.add('hidden');
+        }, 3000);
+      }
+
+      if (form) {
+        form.addEventListener('submit', function (e) {
+          e.preventDefault();
+          var nameVal = document.getElementById('input-fullname').value.trim();
+          var emailVal = document.getElementById('input-email').value.trim();
+          if (nameVal && displayName) displayName.textContent = nameVal;
+          if (emailVal && displayEmail) displayEmail.textContent = emailVal;
+          showToast('Dados pessoais atualizados com sucesso.');
+        });
+      }
+
+      var avatarBtn = document.getElementById('btn-edit-avatar');
+      if (avatarBtn) {
+        avatarBtn.addEventListener('click', function () {
+          showToast('Selecione uma nova foto na galeria.');
+        });
+      }
+
+      var passwordBtn = document.getElementById('btn-change-password');
+      if (passwordBtn) {
+        passwordBtn.addEventListener('click', function () {
+          showToast('Link de redefinição enviado para seu e-mail.');
+        });
+      }
+
+      var switches = document.querySelectorAll('.toggle-switch');
+      switches.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var checked = btn.getAttribute('aria-checked') === 'true';
+          var next = !checked;
+          btn.setAttribute('aria-checked', String(next));
+          var knob = btn.querySelector('.toggle-knob');
+          if (next) {
+            btn.classList.remove('bg-dark-surface-container-highest');
+            btn.classList.add('bg-dark-primary');
+            if (knob) {
+              knob.classList.remove('translate-x-0', 'bg-dark-on-surface-variant');
+              knob.classList.add('translate-x-5', 'bg-dark-on-primary');
+            }
+          } else {
+            btn.classList.remove('bg-dark-primary');
+            btn.classList.add('bg-dark-surface-container-highest');
+            if (knob) {
+              knob.classList.remove('translate-x-5', 'bg-dark-on-primary');
+              knob.classList.add('translate-x-0', 'bg-dark-on-surface-variant');
+            }
+          }
+        });
+      });
+    })();
+  </script>
+
+
+</body></html>
