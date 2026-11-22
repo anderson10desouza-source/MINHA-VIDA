@@ -88,6 +88,72 @@ export async function fetchCloudState(accessToken: string): Promise<CloudStateFe
   }
 }
 
+export const SYNTHETIC_LOGIN_DOMAIN = '@login.meumundominhavida.app';
+
+export function normalizeLoginIdentifier(raw: string): string {
+  const trimmed = raw.trim().toLowerCase();
+  if (!trimmed) return '';
+  if (trimmed.includes('@')) return trimmed;
+  const slug = trimmed.replace(/\s+/g, '.').replace(/[^a-z0-9._-]/g, '');
+  return slug ? `${slug}${SYNTHETIC_LOGIN_DOMAIN}` : '';
+}
+
+export function formatDisplayLogin(emailOrLogin: string): string {
+  const clean = emailOrLogin.trim();
+  if (clean.toLowerCase().endsWith(SYNTHETIC_LOGIN_DOMAIN)) {
+    return clean.slice(0, -SYNTHETIC_LOGIN_DOMAIN.length);
+  }
+  return clean;
+}
+
+export async function createInstantCloudAccount(
+  loginOrEmail: string,
+  password: string,
+  fullName?: string
+): Promise<{
+  ok: boolean;
+  email?: string;
+  needsAdminFallback?: boolean;
+  error?: string;
+}> {
+  try {
+    const res = await fetch('/api/supabase/signup', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: loginOrEmail,
+        password,
+        fullName,
+      }),
+    });
+    const data = (await res.json()) as {
+      ok?: boolean;
+      email?: string;
+      needsAdminFallback?: boolean;
+      error?: string;
+    };
+    if (!res.ok || !data.ok) {
+      return {
+        ok: false,
+        needsAdminFallback: Boolean(data.needsAdminFallback),
+        error: data.error || 'Não foi possível criar sua conta.',
+      };
+    }
+    return {
+      ok: true,
+      email: data.email,
+    };
+  } catch {
+    return {
+      ok: false,
+      needsAdminFallback: true,
+      error: 'Sem conexão com o servidor.',
+    };
+  }
+}
+
 export async function saveCloudState(
   accessToken: string,
   state: unknown

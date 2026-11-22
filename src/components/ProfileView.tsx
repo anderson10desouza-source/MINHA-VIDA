@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { UserProfile } from '../types';
+import { formatDisplayLogin } from '../lib/supabaseClient';
 import { ResilientImage } from './ResilientImage';
 
 interface ProfileViewProps {
@@ -89,7 +90,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     e.preventDefault();
     const trimmedName = fullName.trim();
     const trimmedEmail = email.trim();
-    if (!trimmedName || !trimmedEmail) return;
+    if (!trimmedName) return;
 
     onSaveProfile({
       ...profile,
@@ -158,8 +159,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     const cleanPwd = authPassword;
     const cleanName = authName.trim();
 
-    if (!cleanEmail || cleanPwd.length < 6) {
-      setAuthError('Informe um e-mail válido e senha com no mínimo 6 caracteres.');
+    if (!cleanEmail || cleanEmail.length < 3 || cleanPwd.length < 6) {
+      setAuthError('Informe um login ou e-mail válido e senha com no mínimo 6 caracteres.');
       return;
     }
 
@@ -338,7 +339,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     Sessão ativa
                   </span>
                   <span className="font-body text-body-md text-light-on-surface dark:text-dark-on-surface truncate">
-                    {cloudEmail}
+                    {formatDisplayLogin(cloudEmail)}
                   </span>
                   {lastCloudSyncAt && (
                     <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
@@ -489,15 +490,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     htmlFor="cloud-auth-email"
                     className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant"
                   >
-                    E-mail (Login)
+                    Login ou E-mail
                   </label>
                   <input
                     id="cloud-auth-email"
-                    type="email"
+                    type="text"
+                    autoComplete="username"
                     value={authEmail}
                     onChange={(e) => setAuthEmail(e.target.value)}
                     required
-                    placeholder="seu@email.com"
+                    placeholder="seu.login ou seu@email.com"
                     className="rounded bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface font-body text-body-md px-3 py-2 focus:outline-none focus:border-light-primary dark:focus:border-dark-primary"
                   />
                 </div>
@@ -752,14 +754,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 htmlFor="input-email"
                 className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant"
               >
-                E-mail
+                Login / E-mail
               </label>
               <input
                 id="input-email"
-                type="email"
+                type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                required
                 className="rounded bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface font-body text-body-md px-3 py-2 focus:outline-none focus:border-light-primary dark:focus:border-dark-primary"
               />
             </div>

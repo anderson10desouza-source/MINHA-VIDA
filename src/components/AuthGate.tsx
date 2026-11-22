@@ -60,8 +60,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({
       setErrorMsg('Informe seu nome completo para criar a conta.');
       return;
     }
-    if (!cleanEmail || password.length < 6) {
-      setErrorMsg('Informe um e-mail válido e senha com no mínimo 6 caracteres.');
+    if (!cleanEmail || cleanEmail.length < 3 || password.length < 6) {
+      setErrorMsg('Informe um login ou e-mail válido e senha com no mínimo 6 caracteres.');
       return;
     }
     if (mode === 'signup' && password !== confirmPassword) {
@@ -137,7 +137,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
               Meu Mundo Minha Vida
             </h1>
             <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
-              Cadastre-se com seu e-mail e sua própria senha ou entre com sua conta pessoal para acessar seus dados exclusivos.
+              Cadastre seu login e senha e entre na hora, sem precisar confirmar por e-mail.
             </p>
           </div>
         </div>
@@ -204,16 +204,16 @@ export const AuthGate: React.FC<AuthGateProps> = ({
               htmlFor="gate-email"
               className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant"
             >
-              E-mail (Login)
+              Login ou E-mail
             </label>
             <input
               id="gate-email"
-              type="email"
-              autoComplete="email"
+              type="text"
+              autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              placeholder="seu@email.com"
+              placeholder="seu.login ou seu@email.com"
               className="rounded-lg bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface font-body text-body-md px-3.5 py-2.5 focus:outline-none focus:border-light-primary dark:focus:border-dark-primary"
             />
           </div>

@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import {
+  createInstantCloudAccount,
   fetchCloudState,
+  formatDisplayLogin,
   getSupabaseClient,
+  normalizeLoginIdentifier,
   saveCloudState,
 } from './lib/supabaseClient';
 import { AgendaModal } from './components/AgendaModal';
@@ -146,14 +149,15 @@ function formatMemberSinceNow(): string {
 }
 
 function createBlankPersistedState(email = '', fullName = ''): PersistedState {
-  const cleanEmail = email.trim();
+  const displayEmail = formatDisplayLogin(email);
+  const isRealEmail = displayEmail.includes('@');
   const cleanName =
-    fullName.trim() || (cleanEmail ? cleanEmail.split('@')[0] : 'Minha Conta');
+    fullName.trim() || (displayEmail ? displayEmail.split('@')[0] : 'Minha Conta');
 
   return {
     profile: {
       fullName: cleanName,
-      email: cleanEmail,
+      email: isRealEmail ? displayEmail : displayEmail,
       phone: '',
       birthdate: '',
       city: '',
@@ -781,7 +785,7 @@ export default function App() {
       setLastCloudSyncAt(null);
       lastLoadedCloudUserRef.current = session.user.id;
 
-      const userEmail = session.user.email || '';
+      const userEmail = formatDisplayLogin(session.user.email || '');
       const metaName =
         typeof session.user.user_metadata?.full_name === 'string'
           ? session.user.user_metadata.full_name.trim()
@@ -2256,22 +2260,26 @@ export default function App() {
             ),
           };
 
-  const handleCloudSignIn = async (authEmail: string, authPassword: string) => {
+  const handleCloudSignIn = async (authLogin: string, authPassword: string) => {
     const supabase = await getSupabaseClient();
     if (!supabase) return { ok: false, error: 'Supabase não configurado neste ambiente.' };
+    const normalizedEmail = normalizeLoginIdentifier(authLogin);
+    if (!normalizedEmail) {
+      return { ok: false, error: 'Informe um login ou e-mail válido.' };
+    }
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: authEmail,
+      email: normalizedEmail,
       password: authPassword,
     });
     if (error) {
       const msg = error.message.toLowerCase();
       if (msg.includes('invalid login credentials')) {
-        return { ok: false, error: 'E-mail ou senha incorretos.' };
+        return { ok: false, error: 'Login/e-mail ou senha incorretos.' };
       }
       if (msg.includes('email not confirmed')) {
         return {
           ok: false,
-          error: 'Confirme seu e-mail pelo link enviado antes de entrar.',
+          error: 'Esta conta foi criada antes da confirmação automática. Crie uma nova conta ou confirme o e-mail enviado.',
         };
       }
       return { ok: false, error: error.message };
@@ -2280,9 +2288,10 @@ export default function App() {
       typeof data.user?.user_metadata?.full_name === 'string'
         ? data.user.user_metadata.full_name.trim()
         : '';
+    const displayLogin = formatDisplayLogin(data.user?.email || authLogin);
     setProfile((prev) => ({
       ...prev,
-      email: data.user?.email || authEmail,
+      email: displayLogin,
       fullName: metaName || prev.fullName,
     }));
     showToast('Conta conectada com sucesso.');
@@ -2290,15 +2299,45 @@ export default function App() {
   };
 
   const handleCloudSignUp = async (
-    authEmail: string,
+    authLogin: string,
     authPassword: string,
     fullNameInput?: string
   ) => {
     const supabase = await getSupabaseClient();
     if (!supabase) return { ok: false, error: 'Supabase não configurado neste ambiente.' };
-    const cleanName = fullNameInput?.trim() || profile.fullName;
+    const cleanName = fullNameInput?.trim() || authLogin.trim();
+    const displayLogin = formatDisplayLogin(authLogin);
+
+    // Create already-confirmed user on server so no email verification step is needed
+    const instant = await createInstantCloudAccount(authLogin, authPassword, cleanName);
+    if (instant.ok && instant.email) {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: instant.email,
+        password: authPassword,
+      });
+      if (signInError) {
+        return { ok: false, error: signInError.message };
+      }
+      setProfile((prev) => ({
+        ...prev,
+        fullName: cleanName || prev.fullName,
+        email: displayLogin,
+      }));
+      showToast('Conta criada e conectada com sucesso!');
+      return { ok: true, needsEmailConfirm: false };
+    }
+
+    if (!instant.needsAdminFallback) {
+      return {
+        ok: false,
+        error: instant.error || 'Não foi possível criar sua conta.',
+      };
+    }
+
+    // Fallback when server secret key is unavailable
+    const normalizedEmail = normalizeLoginIdentifier(authLogin);
     const { data, error } = await supabase.auth.signUp({
-      email: authEmail,
+      email: normalizedEmail,
       password: authPassword,
       options: {
         data: { full_name: cleanName },
@@ -2309,7 +2348,7 @@ export default function App() {
       if (msg.includes('already registered')) {
         return {
           ok: false,
-          error: 'Este e-mail já possui cadastro. Use a aba Entrar.',
+          error: 'Este login ou e-mail já possui cadastro. Use a aba Entrar.',
         };
       }
       if (msg.includes('rate limit')) {
@@ -2323,12 +2362,12 @@ export default function App() {
     setProfile((prev) => ({
       ...prev,
       fullName: cleanName || prev.fullName,
-      email: authEmail,
+      email: displayLogin,
     }));
     const needsEmailConfirm = !data.session;
     showToast(
       needsEmailConfirm
-        ? 'Conta criada! Verifique seu e-mail para confirmar e entrar.'
+        ? 'Conta criada! Confirme seu e-mail para entrar.'
         : 'Conta criada e conectada com sucesso!'
     );
     return { ok: true, needsEmailConfirm };
@@ -2355,9 +2394,15 @@ export default function App() {
   };
 
   const handleCloudResetPassword = async (resetEmail: string) => {
+    if (!resetEmail.includes('@')) {
+      return {
+        ok: false,
+        error: 'A recuperação automática por link funciona apenas para contas cadastradas com e-mail.',
+      };
+    }
     const supabase = await getSupabaseClient();
     if (!supabase) return { ok: false, error: 'Supabase não configurado neste ambiente.' };
-    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail);
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim());
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   };

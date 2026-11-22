@@ -912,6 +912,68 @@ function createApiApp() {
   app.get("/api/supabase/config", (_req, res) => {
     res.json(getPublicSupabaseConfig());
   });
+  app.post("/api/supabase/signup", async (req, res) => {
+    const admin = getSupabaseAdminClient();
+    if (!admin) {
+      res.status(503).json({
+        ok: false,
+        needsAdminFallback: true,
+        error: "Supabase server credentials not configured"
+      });
+      return;
+    }
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const rawIdentifier = typeof body.email === "string" && body.email.trim() ? body.email.trim() : typeof body.login === "string" ? body.login.trim() : "";
+    const password = typeof body.password === "string" ? body.password : "";
+    const fullName = typeof body.fullName === "string" ? body.fullName.trim() : "";
+    if (!rawIdentifier || rawIdentifier.length < 3) {
+      res.status(400).json({ ok: false, error: "Informe um login ou e-mail válido (mínimo 3 caracteres)." });
+      return;
+    }
+    if (password.length < 6) {
+      res.status(400).json({ ok: false, error: "A senha deve ter no mínimo 6 caracteres." });
+      return;
+    }
+    let resolvedEmail = rawIdentifier.toLowerCase();
+    if (!resolvedEmail.includes("@")) {
+      const slug = resolvedEmail.replace(/\s+/g, ".").replace(/[^a-z0-9._-]/g, "");
+      if (slug.length < 3) {
+        res.status(400).json({ ok: false, error: "Use letras ou números para criar o seu login." });
+        return;
+      }
+      resolvedEmail = `${slug}@login.meumundominhavida.app`;
+    }
+    const { data, error } = await admin.auth.admin.createUser({
+      email: resolvedEmail,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: fullName || rawIdentifier,
+        login_name: rawIdentifier
+      }
+    });
+    if (error) {
+      const msg = (error.message || "").toLowerCase();
+      if (msg.includes("already") || msg.includes("exists") || error.status === 422) {
+        res.status(409).json({
+          ok: false,
+          error: "Este login ou e-mail já possui cadastro. Use a aba Entrar."
+        });
+        return;
+      }
+      if (msg.includes("email")) {
+        res.status(400).json({ ok: false, error: "Informe um login ou e-mail válido." });
+        return;
+      }
+      res.status(400).json({ ok: false, error: error.message || "Não foi possível criar sua conta." });
+      return;
+    }
+    res.status(201).json({
+      ok: true,
+      email: resolvedEmail,
+      userId: data.user?.id || null
+    });
+  });
   app.get("/api/supabase/state", async (req, res) => {
     const authHeader = typeof req.headers.authorization === "string" ? req.headers.authorization : "";
     const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
