@@ -6,6 +6,7 @@ import {
   saveCloudState,
 } from './lib/supabaseClient';
 import { AgendaModal } from './components/AgendaModal';
+import { AuthGate } from './components/AuthGate';
 import { BooksView } from './components/BooksView';
 import { BottomNav } from './components/BottomNav';
 import { CalculatorView } from './components/CalculatorView';
@@ -36,28 +37,6 @@ import {
   DAILY_WORDS,
   DEVOTIONALS,
   FALLBACK_MARKET_RATES,
-  INITIAL_AGENDA,
-  INITIAL_BOOKS,
-  INITIAL_CHAT_THREADS,
-  INITIAL_CONTACTS,
-  INITIAL_FINANCE_BUDGETS,
-  INITIAL_FINANCE_TRANSACTIONS,
-  INITIAL_GOALS,
-  INITIAL_GROCERY_BUDGET,
-  INITIAL_GROCERY_HISTORY,
-  INITIAL_GROCERY_ITEMS,
-  INITIAL_INVESTMENTS,
-  INITIAL_NOTES,
-  INITIAL_NOTIFICATIONS,
-  INITIAL_PANTRY_ITEMS,
-  INITIAL_PHOTOS,
-  INITIAL_PROFILE,
-  INITIAL_STUDY_OTHERS,
-  INITIAL_STUDY_SCHEDULE,
-  INITIAL_STUDY_SUBJECTS,
-  INITIAL_STUDY_TOPICS,
-  INITIAL_TASKS,
-  INITIAL_TRIPS,
   MUSIC_TRACKS,
   PODCAST_EPISODES,
   RADIO_STATIONS,
@@ -111,8 +90,8 @@ import {
 const STORAGE_KEY = 'meu_mundo_minha_vida_v4';
 
 const DEFAULT_WIDGETS: DailyWidgetsState = {
-  waterCups: 3,
-  prayersCount: 1,
+  waterCups: 0,
+  prayersCount: 0,
   gratitudeDone: false,
   showFocusWidget: true,
   showHabitsWidget: true,
@@ -158,56 +137,121 @@ interface PersistedState {
   isDarkMode: boolean;
 }
 
-function loadInitialState(): PersistedState {
+function formatMemberSinceNow(): string {
+  const formatted = new Intl.DateTimeFormat('pt-BR', {
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date());
+  return `Membro desde ${formatted.charAt(0).toUpperCase()}${formatted.slice(1)}`;
+}
+
+function createBlankPersistedState(email = '', fullName = ''): PersistedState {
+  const cleanEmail = email.trim();
+  const cleanName =
+    fullName.trim() || (cleanEmail ? cleanEmail.split('@')[0] : 'Minha Conta');
+
+  return {
+    profile: {
+      fullName: cleanName,
+      email: cleanEmail,
+      phone: '',
+      birthdate: '',
+      city: '',
+      memberSince: formatMemberSinceNow(),
+      avatarUrl: '',
+      dailyDevotionalReminder: true,
+      agendaAlerts: true,
+    },
+    agenda: [],
+    tasks: [],
+    contacts: [],
+    photos: [],
+    threads: [],
+    devotionalNotes: {},
+    personalDevotionals: [],
+    readingMinutes: 0,
+    favoriteDevotionalIds: [],
+    favoriteTrackIds: [],
+    favoritePodcastIds: [],
+    favoriteRadioIds: [],
+    history: [],
+    widgets: { ...DEFAULT_WIDGETS },
+    financeTransactions: [],
+    financeBudgets: {},
+    investments: [],
+    books: [],
+    calcHistory: [],
+    savedYouTubeVideos: [],
+    recentYouTubeVideos: [],
+    studySubjects: [],
+    studyTopics: [],
+    studySchedule: [],
+    studyOthers: [],
+    favoriteStudyTipIds: [],
+    groceryItems: [],
+    pantryItems: [],
+    groceryHistory: [],
+    groceryBudget: 0,
+    notes: [],
+    goals: [],
+    trips: [],
+    manualOffline: false,
+    isDarkMode: true,
+  };
+}
+
+function loadUserCachedState(
+  userId: string,
+  fallbackEmail = '',
+  fallbackName = ''
+): PersistedState {
+  const blank = createBlankPersistedState(fallbackEmail, fallbackName);
   try {
-    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('meu_mundo_minha_vida_v3');
+    const raw = localStorage.getItem(`${STORAGE_KEY}_${userId}`);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<PersistedState>;
       return {
-        profile: parsed.profile ?? INITIAL_PROFILE,
-        agenda: parsed.agenda ?? INITIAL_AGENDA,
-        tasks: parsed.tasks ?? INITIAL_TASKS,
-        contacts: parsed.contacts ?? INITIAL_CONTACTS,
-        photos: parsed.photos ?? INITIAL_PHOTOS,
-        threads: parsed.threads ?? INITIAL_CHAT_THREADS,
+        profile: {
+          ...blank.profile,
+          ...(parsed.profile ?? {}),
+          email: parsed.profile?.email || blank.profile.email,
+          fullName: parsed.profile?.fullName || blank.profile.fullName,
+        },
+        agenda: parsed.agenda ?? [],
+        tasks: parsed.tasks ?? [],
+        contacts: parsed.contacts ?? [],
+        photos: parsed.photos ?? [],
+        threads: parsed.threads ?? [],
         devotionalNotes: parsed.devotionalNotes ?? {},
         personalDevotionals: parsed.personalDevotionals ?? [],
         readingMinutes:
-          typeof parsed.readingMinutes === 'number' ? parsed.readingMinutes : 80,
-        favoriteDevotionalIds: parsed.favoriteDevotionalIds ?? ['dev-1'],
-        favoriteTrackIds: parsed.favoriteTrackIds ?? ['trk-1'],
+          typeof parsed.readingMinutes === 'number' ? parsed.readingMinutes : 0,
+        favoriteDevotionalIds: parsed.favoriteDevotionalIds ?? [],
+        favoriteTrackIds: parsed.favoriteTrackIds ?? [],
         favoritePodcastIds: parsed.favoritePodcastIds ?? [],
         favoriteRadioIds: parsed.favoriteRadioIds ?? [],
         history: parsed.history ?? [],
         widgets: { ...DEFAULT_WIDGETS, ...(parsed.widgets ?? {}) },
-        financeTransactions: parsed.financeTransactions ?? INITIAL_FINANCE_TRANSACTIONS,
-        financeBudgets: { ...INITIAL_FINANCE_BUDGETS, ...(parsed.financeBudgets ?? {}) },
-        investments: parsed.investments ?? INITIAL_INVESTMENTS,
-        books: (parsed.books ?? INITIAL_BOOKS).map((savedBook) => {
-          if (savedBook.contentText) return savedBook;
-          const seed = INITIAL_BOOKS.find((b) => b.id === savedBook.id);
-          return seed?.contentText
-            ? { ...savedBook, contentText: seed.contentText }
-            : savedBook;
-        }),
+        financeTransactions: parsed.financeTransactions ?? [],
+        financeBudgets: parsed.financeBudgets ?? {},
+        investments: parsed.investments ?? [],
+        books: parsed.books ?? [],
         calcHistory: parsed.calcHistory ?? [],
         savedYouTubeVideos: parsed.savedYouTubeVideos ?? [],
         recentYouTubeVideos: parsed.recentYouTubeVideos ?? [],
-        studySubjects: parsed.studySubjects ?? INITIAL_STUDY_SUBJECTS,
-        studyTopics: parsed.studyTopics ?? INITIAL_STUDY_TOPICS,
-        studySchedule: parsed.studySchedule ?? INITIAL_STUDY_SCHEDULE,
-        studyOthers: parsed.studyOthers ?? INITIAL_STUDY_OTHERS,
+        studySubjects: parsed.studySubjects ?? [],
+        studyTopics: parsed.studyTopics ?? [],
+        studySchedule: parsed.studySchedule ?? [],
+        studyOthers: parsed.studyOthers ?? [],
         favoriteStudyTipIds: parsed.favoriteStudyTipIds ?? [],
-        groceryItems: parsed.groceryItems ?? INITIAL_GROCERY_ITEMS,
-        pantryItems: parsed.pantryItems ?? INITIAL_PANTRY_ITEMS,
-        groceryHistory: parsed.groceryHistory ?? INITIAL_GROCERY_HISTORY,
+        groceryItems: parsed.groceryItems ?? [],
+        pantryItems: parsed.pantryItems ?? [],
+        groceryHistory: parsed.groceryHistory ?? [],
         groceryBudget:
-          typeof parsed.groceryBudget === 'number'
-            ? parsed.groceryBudget
-            : INITIAL_GROCERY_BUDGET,
-        notes: parsed.notes ?? INITIAL_NOTES,
-        goals: parsed.goals ?? INITIAL_GOALS,
-        trips: parsed.trips ?? INITIAL_TRIPS,
+          typeof parsed.groceryBudget === 'number' ? parsed.groceryBudget : 0,
+        notes: parsed.notes ?? [],
+        goals: parsed.goals ?? [],
+        trips: parsed.trips ?? [],
         manualOffline: Boolean(parsed.manualOffline),
         isDarkMode: typeof parsed.isDarkMode === 'boolean' ? parsed.isDarkMode : true,
       };
@@ -215,44 +259,7 @@ function loadInitialState(): PersistedState {
   } catch {
     // ignore corrupted storage
   }
-  return {
-    profile: INITIAL_PROFILE,
-    agenda: INITIAL_AGENDA,
-    tasks: INITIAL_TASKS,
-    contacts: INITIAL_CONTACTS,
-    photos: INITIAL_PHOTOS,
-    threads: INITIAL_CHAT_THREADS,
-    devotionalNotes: {},
-    personalDevotionals: [],
-    readingMinutes: 80,
-    favoriteDevotionalIds: ['dev-1'],
-    favoriteTrackIds: ['trk-1'],
-    favoritePodcastIds: [],
-    favoriteRadioIds: [],
-    history: [],
-    widgets: DEFAULT_WIDGETS,
-    financeTransactions: INITIAL_FINANCE_TRANSACTIONS,
-    financeBudgets: INITIAL_FINANCE_BUDGETS,
-    investments: INITIAL_INVESTMENTS,
-    books: INITIAL_BOOKS,
-    calcHistory: [],
-    savedYouTubeVideos: [],
-    recentYouTubeVideos: [],
-    studySubjects: INITIAL_STUDY_SUBJECTS,
-    studyTopics: INITIAL_STUDY_TOPICS,
-    studySchedule: INITIAL_STUDY_SCHEDULE,
-    studyOthers: INITIAL_STUDY_OTHERS,
-    favoriteStudyTipIds: [],
-    groceryItems: INITIAL_GROCERY_ITEMS,
-    pantryItems: INITIAL_PANTRY_ITEMS,
-    groceryHistory: INITIAL_GROCERY_HISTORY,
-    groceryBudget: INITIAL_GROCERY_BUDGET,
-    notes: INITIAL_NOTES,
-    goals: INITIAL_GOALS,
-    trips: INITIAL_TRIPS,
-    manualOffline: false,
-    isDarkMode: true,
-  };
+  return blank;
 }
 
 type AudioMode = 'music' | 'podcast' | 'radio';
@@ -264,7 +271,7 @@ function formatTimer(seconds: number): string {
 }
 
 export default function App() {
-  const initial = loadInitialState();
+  const initial = createBlankPersistedState();
 
   const [activeTab, setActiveTab] = useState<AppTab>('inicio');
   const [previousTab, setPreviousTab] = useState<AppTab>('inicio');
@@ -296,10 +303,10 @@ export default function App() {
   const [history, setHistory] = useState<HistoryItem[]>(initial.history);
   const [widgets, setWidgets] = useState<DailyWidgetsState>(initial.widgets);
   const [financeTransactions, setFinanceTransactions] = useState<FinanceTransaction[]>(
-    initial.financeTransactions ?? INITIAL_FINANCE_TRANSACTIONS
+    initial.financeTransactions ?? []
   );
   const [financeBudgets, setFinanceBudgets] = useState<Record<string, number>>(
-    initial.financeBudgets ?? INITIAL_FINANCE_BUDGETS
+    initial.financeBudgets ?? {}
   );
   const [investments, setInvestments] = useState<InvestmentAsset[]>(initial.investments);
   const [books, setBooks] = useState<BookItem[]>(initial.books);
@@ -312,35 +319,35 @@ export default function App() {
     initial.recentYouTubeVideos ?? []
   );
   const [studySubjects, setStudySubjects] = useState<StudySubject[]>(
-    initial.studySubjects ?? INITIAL_STUDY_SUBJECTS
+    initial.studySubjects ?? []
   );
   const [studyTopics, setStudyTopics] = useState<StudyTopic[]>(
-    initial.studyTopics ?? INITIAL_STUDY_TOPICS
+    initial.studyTopics ?? []
   );
   const [groceryItems, setGroceryItems] = useState<GroceryItem[]>(
-    initial.groceryItems ?? INITIAL_GROCERY_ITEMS
+    initial.groceryItems ?? []
   );
   const [pantryItems, setPantryItems] = useState<PantryItem[]>(
-    initial.pantryItems ?? INITIAL_PANTRY_ITEMS
+    initial.pantryItems ?? []
   );
   const [groceryHistory, setGroceryHistory] = useState<GroceryPurchaseRecord[]>(
-    initial.groceryHistory ?? INITIAL_GROCERY_HISTORY
+    initial.groceryHistory ?? []
   );
   const [groceryBudget, setGroceryBudget] = useState<number>(
-    initial.groceryBudget ?? INITIAL_GROCERY_BUDGET
+    initial.groceryBudget ?? 0
   );
   const [studySchedule, setStudySchedule] = useState<StudyScheduleBlock[]>(
-    initial.studySchedule ?? INITIAL_STUDY_SCHEDULE
+    initial.studySchedule ?? []
   );
   const [studyOthers, setStudyOthers] = useState<StudyOtherItem[]>(
-    initial.studyOthers ?? INITIAL_STUDY_OTHERS
+    initial.studyOthers ?? []
   );
   const [favoriteStudyTipIds, setFavoriteStudyTipIds] = useState<string[]>(
     initial.favoriteStudyTipIds ?? []
   );
-  const [notes, setNotes] = useState<NoteEntry[]>(initial.notes ?? INITIAL_NOTES);
-  const [goals, setGoals] = useState<GoalItem[]>(initial.goals ?? INITIAL_GOALS);
-  const [trips, setTrips] = useState<TripItem[]>(initial.trips ?? INITIAL_TRIPS);
+  const [notes, setNotes] = useState<NoteEntry[]>(initial.notes ?? []);
+  const [goals, setGoals] = useState<GoalItem[]>(initial.goals ?? []);
+  const [trips, setTrips] = useState<TripItem[]>(initial.trips ?? []);
   const [activeYtVideo, setActiveYtVideo] = useState<YouTubeVideoItem | null>(null);
   const [selectedYtCategory, setSelectedYtCategory] = useState<string>('destaques');
   const [isSearchingYt, setIsSearchingYt] = useState<boolean>(false);
@@ -381,8 +388,7 @@ export default function App() {
   const [podcastElapsedSeconds, setPodcastElapsedSeconds] = useState(0);
   const [radioElapsedSeconds, setRadioElapsedSeconds] = useState(0);
   const [volume, setVolume] = useState(0.8);
-  const [notifications, setNotifications] =
-    useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [dismissedDynNotifIds, setDismissedDynNotifIds] = useState<string[]>([]);
   const [readDynNotifIds, setReadDynNotifIds] = useState<string[]>([]);
   const [financeInitialFilter, setFinanceInitialFilter] =
@@ -394,10 +400,12 @@ export default function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimerRef = useRef<number | null>(null);
 
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [cloudConfigured, setCloudConfigured] = useState(false);
   const [cloudSession, setCloudSession] = useState<Session | null>(null);
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [lastCloudSyncAt, setLastCloudSyncAt] = useState<string | null>(null);
+  const lastCloudSyncAtRef = useRef<string | null>(null);
   const [cloudNeedsSchema, setCloudNeedsSchema] = useState(false);
   const latestPayloadRef = useRef<PersistedState | null>(null);
   const isRestoringFromCloudRef = useRef(false);
@@ -615,7 +623,9 @@ export default function App() {
         isDarkMode,
       };
       latestPayloadRef.current = payload;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      if (cloudSession?.user?.id) {
+        localStorage.setItem(`${STORAGE_KEY}_${cloudSession.user.id}`, JSON.stringify(payload));
+      }
 
       if (cloudSession?.access_token && !isRestoringFromCloudRef.current) {
         if (cloudSyncTimerRef.current) {
@@ -626,10 +636,14 @@ export default function App() {
           void saveCloudState(token, payload).then((res) => {
             if (res.ok) {
               setCloudNeedsSchema(false);
-              if (res.updatedAt) setLastCloudSyncAt(res.updatedAt);
+              if (res.updatedAt) {
+                lastCloudSyncAtRef.current = res.updatedAt;
+                setLastCloudSyncAt(res.updatedAt);
+              }
             } else if (res.needsSchema) {
               setCloudNeedsSchema(true);
             }
+            cloudSyncTimerRef.current = null;
           });
         }, 1200);
       }
@@ -709,7 +723,7 @@ export default function App() {
         setFinanceTransactions(remote.financeTransactions);
       }
       if (remote.financeBudgets) {
-        setFinanceBudgets({ ...INITIAL_FINANCE_BUDGETS, ...remote.financeBudgets });
+        setFinanceBudgets(remote.financeBudgets);
       }
       if (Array.isArray(remote.investments)) setInvestments(remote.investments);
       if (Array.isArray(remote.books)) {
@@ -759,7 +773,26 @@ export default function App() {
         return;
       }
       if (lastLoadedCloudUserRef.current === session.user.id) return;
+      if (cloudSyncTimerRef.current) {
+        window.clearTimeout(cloudSyncTimerRef.current);
+        cloudSyncTimerRef.current = null;
+      }
+      lastCloudSyncAtRef.current = null;
+      setLastCloudSyncAt(null);
       lastLoadedCloudUserRef.current = session.user.id;
+
+      const userEmail = session.user.email || '';
+      const metaName =
+        typeof session.user.user_metadata?.full_name === 'string'
+          ? session.user.user_metadata.full_name.trim()
+          : '';
+      const userCacheKey = `${STORAGE_KEY}_${session.user.id}`;
+      const hasUserCache = Boolean(localStorage.getItem(userCacheKey));
+      if (hasUserCache) {
+        await applyCloudState(loadUserCachedState(session.user.id, userEmail, metaName));
+      } else {
+        await applyCloudState(createBlankPersistedState(userEmail, metaName));
+      }
 
       setIsCloudSyncing(true);
       try {
@@ -772,10 +805,18 @@ export default function App() {
         setCloudNeedsSchema(false);
         if (fetched.state) {
           await applyCloudState(fetched.state as Partial<PersistedState>);
-          if (fetched.updatedAt) setLastCloudSyncAt(fetched.updatedAt);
-        } else if (latestPayloadRef.current) {
-          const pushed = await saveCloudState(session.access_token, latestPayloadRef.current);
+          if (fetched.updatedAt) {
+            lastCloudSyncAtRef.current = fetched.updatedAt;
+            setLastCloudSyncAt(fetched.updatedAt);
+          }
+        } else {
+          const freshUserState = hasUserCache
+            ? loadUserCachedState(session.user.id, userEmail, metaName)
+            : createBlankPersistedState(userEmail, metaName);
+          await applyCloudState(freshUserState);
+          const pushed = await saveCloudState(session.access_token, freshUserState);
           if (pushed.ok && pushed.updatedAt) {
+            lastCloudSyncAtRef.current = pushed.updatedAt;
             setLastCloudSyncAt(pushed.updatedAt);
           } else if (pushed.needsSchema) {
             setCloudNeedsSchema(true);
@@ -787,10 +828,16 @@ export default function App() {
     };
 
     void getSupabaseClient().then((supabase) => {
-      if (!active || !supabase) return;
+      if (!active) return;
+      if (!supabase) {
+        setIsAuthChecking(false);
+        return;
+      }
       setCloudConfigured(true);
       void supabase.auth.getSession().then(({ data }) => {
-        void syncOnSession(data.session ?? null);
+        void syncOnSession(data.session ?? null).finally(() => {
+          if (active) setIsAuthChecking(false);
+        });
       });
       const listener = supabase.auth.onAuthStateChange((_event, nextSession) => {
         void syncOnSession(nextSession ?? null);
@@ -806,6 +853,48 @@ export default function App() {
       }
     };
   }, []);
+
+  // Refresh latest cloud state automatically when returning to the app or focusing window
+  useEffect(() => {
+    if (!cloudSession?.access_token) return;
+    let lastCheckedAt = 0;
+
+    const refreshFromCloudIfNewer = async () => {
+      if (document.visibilityState !== 'visible') return;
+      if (cloudSyncTimerRef.current || isRestoringFromCloudRef.current) return;
+      const now = Date.now();
+      if (now - lastCheckedAt < 15000) return;
+      lastCheckedAt = now;
+
+      const fetched = await fetchCloudState(cloudSession.access_token);
+      if (!fetched.ok || !fetched.state || !fetched.updatedAt) return;
+      if (
+        !lastCloudSyncAtRef.current ||
+        new Date(fetched.updatedAt).getTime() >
+          new Date(lastCloudSyncAtRef.current).getTime()
+      ) {
+        await applyCloudState(fetched.state as Partial<PersistedState>);
+        lastCloudSyncAtRef.current = fetched.updatedAt;
+        setLastCloudSyncAt(fetched.updatedAt);
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshFromCloudIfNewer();
+      }
+    };
+    const onFocus = () => {
+      void refreshFromCloudIfNewer();
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [cloudSession?.access_token]);
 
   // Progress ticker for fallback WAV tracks, podcasts, and radio timer
   useEffect(() => {
@@ -1638,41 +1727,46 @@ export default function App() {
     setTracks(MUSIC_TRACKS);
     setSelectedArtist('Todos');
     setTrackIndex(0);
-    setProfile(INITIAL_PROFILE);
-    setAgenda(INITIAL_AGENDA);
-    setTasks(INITIAL_TASKS);
-    setContacts(INITIAL_CONTACTS);
-    setPhotos(INITIAL_PHOTOS);
-    setThreads(INITIAL_CHAT_THREADS);
+    const blank = createBlankPersistedState(
+      cloudSession?.user?.email || profile.email,
+      profile.fullName
+    );
+    setProfile(blank.profile);
+    setAgenda([]);
+    setTasks([]);
+    setContacts([]);
+    setPhotos([]);
+    setThreads([]);
     setDevotionalNotes({});
     setPersonalDevotionals([]);
-    setReadingMinutes(80);
-    setFavoriteDevotionalIds(['dev-1']);
-    setFavoriteTrackIds(['trk-1']);
+    setReadingMinutes(0);
+    setFavoriteDevotionalIds([]);
+    setFavoriteTrackIds([]);
     setFavoritePodcastIds([]);
     setFavoriteRadioIds([]);
     setHistory([]);
-    setWidgets(DEFAULT_WIDGETS);
-    setFinanceTransactions(INITIAL_FINANCE_TRANSACTIONS);
-    setFinanceBudgets(INITIAL_FINANCE_BUDGETS);
-    setInvestments(INITIAL_INVESTMENTS);
-    setBooks(INITIAL_BOOKS);
+    setWidgets({ ...DEFAULT_WIDGETS });
+    setFinanceTransactions([]);
+    setFinanceBudgets({});
+    setInvestments([]);
+    setBooks([]);
     setCalcHistory([]);
-    setStudySubjects(INITIAL_STUDY_SUBJECTS);
-    setStudyTopics(INITIAL_STUDY_TOPICS);
-    setStudySchedule(INITIAL_STUDY_SCHEDULE);
-    setStudyOthers(INITIAL_STUDY_OTHERS);
+    setStudySubjects([]);
+    setStudyTopics([]);
+    setStudySchedule([]);
+    setStudyOthers([]);
     setFavoriteStudyTipIds([]);
-    setGroceryItems(INITIAL_GROCERY_ITEMS);
-    setPantryItems(INITIAL_PANTRY_ITEMS);
-    setGroceryHistory(INITIAL_GROCERY_HISTORY);
-    setGroceryBudget(INITIAL_GROCERY_BUDGET);
-    setNotes(INITIAL_NOTES);
-    setGoals(INITIAL_GOALS);
-    setTrips(INITIAL_TRIPS);
+    setGroceryItems([]);
+    setPantryItems([]);
+    setGroceryHistory([]);
+    setGroceryBudget(0);
+    setNotes([]);
+    setGoals([]);
+    setTrips([]);
+    setNotifications([]);
     setManualOffline(false);
     setIsDarkMode(true);
-    showToast('Dados iniciais restaurados.');
+    showToast('Dados da conta limpos com sucesso.');
   };
 
   const handleRefreshMarketRates = async () => {
@@ -2162,6 +2256,124 @@ export default function App() {
             ),
           };
 
+  const handleCloudSignIn = async (authEmail: string, authPassword: string) => {
+    const supabase = await getSupabaseClient();
+    if (!supabase) return { ok: false, error: 'Supabase não configurado neste ambiente.' };
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: authEmail,
+      password: authPassword,
+    });
+    if (error) {
+      const msg = error.message.toLowerCase();
+      if (msg.includes('invalid login credentials')) {
+        return { ok: false, error: 'E-mail ou senha incorretos.' };
+      }
+      if (msg.includes('email not confirmed')) {
+        return {
+          ok: false,
+          error: 'Confirme seu e-mail pelo link enviado antes de entrar.',
+        };
+      }
+      return { ok: false, error: error.message };
+    }
+    const metaName =
+      typeof data.user?.user_metadata?.full_name === 'string'
+        ? data.user.user_metadata.full_name.trim()
+        : '';
+    setProfile((prev) => ({
+      ...prev,
+      email: data.user?.email || authEmail,
+      fullName: metaName || prev.fullName,
+    }));
+    showToast('Conta conectada com sucesso.');
+    return { ok: true };
+  };
+
+  const handleCloudSignUp = async (
+    authEmail: string,
+    authPassword: string,
+    fullNameInput?: string
+  ) => {
+    const supabase = await getSupabaseClient();
+    if (!supabase) return { ok: false, error: 'Supabase não configurado neste ambiente.' };
+    const cleanName = fullNameInput?.trim() || profile.fullName;
+    const { data, error } = await supabase.auth.signUp({
+      email: authEmail,
+      password: authPassword,
+      options: {
+        data: { full_name: cleanName },
+      },
+    });
+    if (error) {
+      const msg = error.message.toLowerCase();
+      if (msg.includes('already registered')) {
+        return {
+          ok: false,
+          error: 'Este e-mail já possui cadastro. Use a aba Entrar.',
+        };
+      }
+      if (msg.includes('rate limit')) {
+        return {
+          ok: false,
+          error: 'Muitas tentativas em sequência. Aguarde alguns instantes.',
+        };
+      }
+      return { ok: false, error: error.message };
+    }
+    setProfile((prev) => ({
+      ...prev,
+      fullName: cleanName || prev.fullName,
+      email: authEmail,
+    }));
+    const needsEmailConfirm = !data.session;
+    showToast(
+      needsEmailConfirm
+        ? 'Conta criada! Verifique seu e-mail para confirmar e entrar.'
+        : 'Conta criada e conectada com sucesso!'
+    );
+    return { ok: true, needsEmailConfirm };
+  };
+
+  const handleCloudSignOut = async () => {
+    const supabase = await getSupabaseClient();
+    if (cloudSyncTimerRef.current) {
+      window.clearTimeout(cloudSyncTimerRef.current);
+    }
+    setIsPlaying(false);
+    setHasActivePlayer(false);
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+    lastLoadedCloudUserRef.current = null;
+    lastCloudSyncAtRef.current = null;
+    setCloudSession(null);
+    setLastCloudSyncAt(null);
+    setNotifications([]);
+    setActiveTab('inicio');
+    await applyCloudState(createBlankPersistedState());
+    showToast('Você saiu da sua conta.');
+  };
+
+  const handleCloudResetPassword = async (resetEmail: string) => {
+    const supabase = await getSupabaseClient();
+    if (!supabase) return { ok: false, error: 'Supabase não configurado neste ambiente.' };
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  };
+
+  if (isAuthChecking || !cloudSession) {
+    return (
+      <AuthGate
+        isCheckingSession={isAuthChecking}
+        cloudConfigured={cloudConfigured}
+        onSignIn={handleCloudSignIn}
+        onSignUp={handleCloudSignUp}
+        onResetPassword={handleCloudResetPassword}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-light-surface dark:bg-dark-surface text-light-on-surface dark:text-dark-on-surface flex">
       {/* Desktop Navigation Rail */}
@@ -2373,43 +2585,9 @@ export default function App() {
             isCloudSyncing={isCloudSyncing}
             lastCloudSyncAt={lastCloudSyncAt}
             cloudNeedsSchema={cloudNeedsSchema}
-            onCloudSignIn={async (authEmail, authPassword) => {
-              const supabase = await getSupabaseClient();
-              if (!supabase) return { ok: false, error: 'Supabase não configurado.' };
-              const { error } = await supabase.auth.signInWithPassword({
-                email: authEmail,
-                password: authPassword,
-              });
-              if (error) return { ok: false, error: error.message };
-              showToast('Conta conectada e sincronizada com o banco de dados.');
-              return { ok: true };
-            }}
-            onCloudSignUp={async (authEmail, authPassword) => {
-              const supabase = await getSupabaseClient();
-              if (!supabase) return { ok: false, error: 'Supabase não configurado.' };
-              const { data, error } = await supabase.auth.signUp({
-                email: authEmail,
-                password: authPassword,
-                options: {
-                  data: { full_name: profile.fullName },
-                },
-              });
-              if (error) return { ok: false, error: error.message };
-              const needsEmailConfirm = !data.session;
-              showToast(
-                needsEmailConfirm
-                  ? 'Conta criada! Confirme o e-mail enviado.'
-                  : 'Conta criada e sincronizada com o banco de dados!'
-              );
-              return { ok: true, needsEmailConfirm };
-            }}
-            onCloudSignOut={async () => {
-              const supabase = await getSupabaseClient();
-              if (!supabase) return;
-              await supabase.auth.signOut();
-              setLastCloudSyncAt(null);
-              showToast('Sessão desconectada.');
-            }}
+            onCloudSignIn={handleCloudSignIn}
+            onCloudSignUp={handleCloudSignUp}
+            onCloudSignOut={handleCloudSignOut}
             onCloudSyncNow={async () => {
               if (!cloudSession?.access_token || !latestPayloadRef.current) return;
               setIsCloudSyncing(true);
@@ -2420,7 +2598,10 @@ export default function App() {
                 );
                 if (res.ok) {
                   setCloudNeedsSchema(false);
-                  if (res.updatedAt) setLastCloudSyncAt(res.updatedAt);
+                  if (res.updatedAt) {
+                    lastCloudSyncAtRef.current = res.updatedAt;
+                    setLastCloudSyncAt(res.updatedAt);
+                  }
                   showToast('Dados sincronizados no Supabase.');
                 } else {
                   if (res.needsSchema) setCloudNeedsSchema(true);
@@ -2432,11 +2613,12 @@ export default function App() {
             }}
             onCloudUpdatePassword={async (newPassword) => {
               const supabase = await getSupabaseClient();
-              if (!supabase) return { ok: false, error: 'Supabase não configurado.' };
+              if (!supabase) return { ok: false, error: 'Supabase não configurado neste ambiente.' };
               const { error } = await supabase.auth.updateUser({ password: newPassword });
               if (error) return { ok: false, error: error.message };
               return { ok: true };
             }}
+            onCloudResetPassword={handleCloudResetPassword}
           />
         )}
 

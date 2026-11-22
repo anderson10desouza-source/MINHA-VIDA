@@ -122,7 +122,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
 
-  const firstName = profile.fullName.trim().split(' ')[0] || 'Anderson';
+  const firstName = profile.fullName.trim().split(' ')[0] || 'Você';
   const initials = profile.fullName
     .split(' ')
     .filter(Boolean)

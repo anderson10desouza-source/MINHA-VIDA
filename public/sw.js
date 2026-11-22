@@ -1,4 +1,4 @@
-const CACHE_NAME = 'meu-mundo-offline-v1';
+const CACHE_NAME = 'meu-mundo-offline-v3';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/pwa-192x192.png'];
 
 self.addEventListener('install', (event) => {
@@ -29,8 +29,12 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Never cache live audio streams
-  if (url.pathname.startsWith('/api/radio/stream') || url.pathname.startsWith('/api/podcast/audio')) {
+  // Never cache live audio streams or private Supabase auth/state endpoints
+  if (
+    url.pathname.startsWith('/api/radio/stream') ||
+    url.pathname.startsWith('/api/podcast/audio') ||
+    url.pathname.startsWith('/api/supabase/')
+  ) {
     return;
   }
 
@@ -45,12 +49,39 @@ self.addEventListener('fetch', (event) => {
           }
           return res;
         })
-        .catch(() => caches.match(request).then((cached) => cached || new Response('{}', { status: 503, headers: { 'Content-Type': 'application/json' } })))
+        .catch(() =>
+          caches
+            .match(request)
+            .then(
+              (cached) =>
+                cached ||
+                new Response('{}', {
+                  status: 503,
+                  headers: { 'Content-Type': 'application/json' },
+                })
+            )
+        )
     );
     return;
   }
 
-  // Stale-while-revalidate / network-first for app shell & static assets
+  // Always check network without HTTP cache for HTML navigation so app updates arrive immediately
+  if (request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html') {
+    event.respondWith(
+      fetch(new Request(request, { cache: 'no-cache' }))
+        .then((res) => {
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match('/index.html'))
+    );
+    return;
+  }
+
+  // Network-first for static assets with offline fallback
   event.respondWith(
     fetch(request)
       .then((res) => {

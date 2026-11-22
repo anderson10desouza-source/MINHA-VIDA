@@ -192,7 +192,7 @@ export const MoreView: React.FC<MoreViewProps> = ({
                 onClick={onResetDemoData}
                 className="min-h-[44px] flex items-center justify-between gap-3 text-left font-body text-body-md text-light-on-surface dark:text-dark-on-surface hover:text-light-primary dark:hover:text-dark-primary transition-colors"
               >
-                <span>Restaurar dados iniciais</span>
+                <span>Limpar dados da conta</span>
                 <span className="material-symbols-outlined text-[20px]">restart_alt</span>
               </button>
             </section>

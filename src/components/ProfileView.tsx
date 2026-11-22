@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { UserProfile } from '../types';
-import { STITCH_AVATAR_URL } from '../data/initialData';
 import { ResilientImage } from './ResilientImage';
 
 interface ProfileViewProps {
@@ -19,12 +18,16 @@ interface ProfileViewProps {
   ) => Promise<{ ok: boolean; error?: string }>;
   onCloudSignUp?: (
     email: string,
-    password: string
+    password: string,
+    fullName?: string
   ) => Promise<{ ok: boolean; error?: string; needsEmailConfirm?: boolean }>;
   onCloudSignOut?: () => Promise<void>;
   onCloudSyncNow?: () => Promise<void>;
   onCloudUpdatePassword?: (
     newPassword: string
+  ) => Promise<{ ok: boolean; error?: string }>;
+  onCloudResetPassword?: (
+    email: string
   ) => Promise<{ ok: boolean; error?: string }>;
 }
 
@@ -43,6 +46,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onCloudSignOut,
   onCloudSyncNow,
   onCloudUpdatePassword,
+  onCloudResetPassword,
 }) => {
   const [fullName, setFullName] = useState(profile.fullName);
   const [email, setEmail] = useState(profile.email);
@@ -54,8 +58,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [newPwd, setNewPwd] = useState('');
 
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [showAuthForm, setShowAuthForm] = useState(false);
+  const [authName, setAuthName] = useState(profile.fullName || '');
   const [authEmail, setAuthEmail] = useState(profile.email || '');
   const [authPassword, setAuthPassword] = useState('');
+  const [authConfirmPassword, setAuthConfirmPassword] = useState('');
+  const [showAuthPassword, setShowAuthPassword] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authInfo, setAuthInfo] = useState<string | null>(null);
@@ -148,8 +156,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     e.preventDefault();
     const cleanEmail = authEmail.trim();
     const cleanPwd = authPassword;
+    const cleanName = authName.trim();
+
     if (!cleanEmail || cleanPwd.length < 6) {
       setAuthError('Informe um e-mail válido e senha com no mínimo 6 caracteres.');
+      return;
+    }
+
+    if (authMode === 'signup' && cleanPwd !== authConfirmPassword) {
+      setAuthError('As senhas não conferem. Digite a mesma senha nos dois campos.');
       return;
     }
 
@@ -164,17 +179,44 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           setAuthError(res.error || 'E-mail ou senha inválidos.');
         } else {
           setAuthPassword('');
+          setAuthConfirmPassword('');
+          setShowAuthForm(false);
         }
       } else if (authMode === 'signup' && onCloudSignUp) {
-        const res = await onCloudSignUp(cleanEmail, cleanPwd);
+        const res = await onCloudSignUp(cleanEmail, cleanPwd, cleanName || undefined);
         if (!res.ok) {
           setAuthError(res.error || 'Não foi possível criar a conta.');
         } else {
           setAuthPassword('');
+          setAuthConfirmPassword('');
           if (res.needsEmailConfirm) {
             setAuthInfo('Conta criada! Verifique seu e-mail para confirmar e entrar.');
+          } else {
+            setShowAuthForm(false);
           }
         }
+      }
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    const cleanEmail = authEmail.trim();
+    if (!cleanEmail) {
+      setAuthError('Digite seu e-mail acima para enviar o link de recuperação.');
+      return;
+    }
+    if (!onCloudResetPassword) return;
+    setAuthError(null);
+    setAuthInfo(null);
+    setAuthBusy(true);
+    try {
+      const res = await onCloudResetPassword(cleanEmail);
+      if (!res.ok) {
+        setAuthError(res.error || 'Não foi possível enviar o e-mail de recuperação.');
+      } else {
+        setAuthInfo(`Link de redefinição de senha enviado para ${cleanEmail}.`);
       }
     } finally {
       setAuthBusy(false);
@@ -251,194 +293,307 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <span className="font-body text-label-sm text-light-primary dark:text-dark-primary tabular-nums">
                   {profile.memberSince}
                 </span>
-                {profile.avatarUrl !== STITCH_AVATAR_URL && (
+                {Boolean(profile.avatarUrl) && (
                   <button
                     type="button"
                     onClick={() => {
-                      onSaveProfile({ ...profile, avatarUrl: STITCH_AVATAR_URL });
-                      onShowToast('Foto padrão restaurada.');
+                      onSaveProfile({ ...profile, avatarUrl: '' });
+                      onShowToast('Foto de perfil removida.');
                     }}
                     className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant hover:underline"
                   >
-                    Restaurar foto
+                    Remover foto
                   </button>
                 )}
               </div>
             </div>
           </section>
 
-          {/* Cloud Account & Sync (Supabase) */}
-          {cloudConfigured && (
-            <section
-              aria-labelledby="heading-conta-nuvem"
-              className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-4 flex flex-col gap-3"
-            >
-              <header className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="material-symbols-outlined text-[20px] text-light-primary dark:text-dark-primary"
-                    aria-hidden="true"
-                  >
-                    cloud_sync
+          {/* Account Login / Sign Up & Cloud Sync */}
+          <section
+            aria-labelledby="heading-conta-nuvem"
+            className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-4 flex flex-col gap-3"
+          >
+            <header className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span
+                  className="material-symbols-outlined text-[20px] text-light-primary dark:text-dark-primary"
+                  aria-hidden="true"
+                >
+                  {cloudEmail ? 'verified_user' : 'login'}
+                </span>
+                <h2
+                  id="heading-conta-nuvem"
+                  className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface"
+                >
+                  {cloudEmail ? 'Conta e Acesso' : 'Entrar ou Criar Conta'}
+                </h2>
+              </div>
+            </header>
+
+            {cloudEmail && (
+              <div className="flex flex-col gap-3">
+                <div className="rounded bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant p-3 flex flex-col gap-1">
+                  <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
+                    Sessão ativa
                   </span>
-                  <h2
-                    id="heading-conta-nuvem"
-                    className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface"
-                  >
-                    Sincronização na Nuvem
-                  </h2>
-                </div>
-              </header>
-
-              {cloudEmail ? (
-                <div className="flex flex-col gap-3">
-                  <div className="rounded bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant p-3 flex flex-col gap-1">
+                  <span className="font-body text-body-md text-light-on-surface dark:text-dark-on-surface truncate">
+                    {cloudEmail}
+                  </span>
+                  {lastCloudSyncAt && (
                     <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
-                      Conta conectada
+                      Último salvamento:{' '}
+                      {new Date(lastCloudSyncAt).toLocaleTimeString('pt-BR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
                     </span>
-                    <span className="font-body text-body-md text-light-on-surface dark:text-dark-on-surface truncate">
-                      {cloudEmail}
-                    </span>
-                    {lastCloudSyncAt && (
-                      <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
-                        Último salvamento:{' '}
-                        {new Date(lastCloudSyncAt).toLocaleTimeString('pt-BR', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </span>
-                    )}
-                  </div>
-
-                  {cloudNeedsSchema && (
-                    <p className="font-body text-body-sm text-amber-500">
-                      Execute o script SQL de criação das tabelas no seu projeto Supabase para ativar o salvamento remoto.
-                    </p>
                   )}
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={isCloudSyncing}
-                      onClick={() => {
-                        void onCloudSyncNow?.();
-                      }}
-                      className="flex-1 min-h-[42px] inline-flex items-center justify-center gap-1.5 rounded-full bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary font-body text-label-md px-4 py-2 hover:opacity-90 disabled:opacity-60 transition-opacity"
-                    >
-                      <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
-                        sync
-                      </span>
-                      {isCloudSyncing ? 'Sincronizando...' : 'Sincronizar agora'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void onCloudSignOut?.();
-                      }}
-                      className="min-h-[42px] inline-flex items-center justify-center rounded-full border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface font-body text-label-md px-4 py-2 hover:bg-light-surface-container-high dark:hover:bg-dark-surface-container-high transition-colors"
-                    >
-                      Sair
-                    </button>
-                  </div>
                 </div>
-              ) : (
-                <form onSubmit={handleCloudAuthSubmit} className="flex flex-col gap-3">
-                  <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
-                    Entre ou crie sua conta para salvar agenda, finanças, supermercado, notas, metas e viagens no banco de dados.
+
+                {cloudNeedsSchema && (
+                  <p className="font-body text-body-sm text-amber-500">
+                    Execute o script SQL de criação das tabelas no seu projeto Supabase para ativar o salvamento remoto.
                   </p>
+                )}
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAuthMode('login');
-                        setAuthError(null);
-                        setAuthInfo(null);
-                      }}
-                      className={`min-h-[38px] rounded font-body text-label-md border transition-colors ${
-                        authMode === 'login'
-                          ? 'bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary border-transparent'
-                          : 'bg-transparent text-light-on-surface-variant dark:text-dark-on-surface-variant border-light-outline-variant dark:border-dark-outline-variant'
-                      }`}
-                    >
-                      Entrar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAuthMode('signup');
-                        setAuthError(null);
-                        setAuthInfo(null);
-                      }}
-                      className={`min-h-[38px] rounded font-body text-label-md border transition-colors ${
-                        authMode === 'signup'
-                          ? 'bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary border-transparent'
-                          : 'bg-transparent text-light-on-surface-variant dark:text-dark-on-surface-variant border-light-outline-variant dark:border-dark-outline-variant'
-                      }`}
-                    >
-                      Criar conta
-                    </button>
-                  </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    aria-expanded={showAuthForm}
+                    onClick={() => {
+                      setShowAuthForm((prev) => {
+                        const next = !prev;
+                        if (next) {
+                          setAuthMode('login');
+                          setAuthEmail('');
+                          setAuthPassword('');
+                          setAuthConfirmPassword('');
+                          setAuthError(null);
+                          setAuthInfo(null);
+                        }
+                        return next;
+                      });
+                    }}
+                    className={`min-h-[44px] inline-flex items-center justify-center gap-1.5 rounded-full font-body text-label-md px-4 py-2 transition-all ${
+                      showAuthForm
+                        ? 'bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary'
+                        : 'border border-light-primary dark:border-dark-primary text-light-primary dark:text-dark-primary hover:bg-light-primary/10 dark:hover:bg-dark-primary/10'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                      login
+                    </span>
+                    Entrar
+                  </button>
 
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void onCloudSignOut?.();
+                    }}
+                    className="min-h-[44px] inline-flex items-center justify-center gap-1.5 rounded-full border border-red-400/50 text-red-400 font-body text-label-md px-4 py-2 hover:bg-red-500/10 transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                      logout
+                    </span>
+                    Sair
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={isCloudSyncing}
+                  onClick={() => {
+                    void onCloudSyncNow?.();
+                  }}
+                  className="w-full min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-full bg-light-surface-container-high dark:bg-dark-surface-container-high text-light-on-surface dark:text-dark-on-surface font-body text-label-md px-4 py-2 hover:opacity-90 disabled:opacity-60 transition-opacity"
+                >
+                  <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                    sync
+                  </span>
+                  {isCloudSyncing ? 'Sincronizando...' : 'Sincronizar agora'}
+                </button>
+              </div>
+            )}
+
+            {(!cloudEmail || showAuthForm) && (
+              <form
+                onSubmit={handleCloudAuthSubmit}
+                className={`flex flex-col gap-3 ${
+                  cloudEmail
+                    ? 'pt-3 border-t border-light-outline-variant dark:border-dark-outline-variant'
+                    : ''
+                }`}
+              >
+                <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
+                  {cloudEmail
+                    ? 'Entre com outro login e senha ou crie uma nova conta.'
+                    : 'Entre com seu login e senha ou crie uma nova conta para salvar e acessar seus dados em qualquer dispositivo.'}
+                </p>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('login');
+                      setAuthError(null);
+                      setAuthInfo(null);
+                    }}
+                    className={`min-h-[40px] rounded font-body text-label-md border transition-colors ${
+                      authMode === 'login'
+                        ? 'bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary border-transparent'
+                        : 'bg-transparent text-light-on-surface-variant dark:text-dark-on-surface-variant border-light-outline-variant dark:border-dark-outline-variant'
+                    }`}
+                  >
+                    Entrar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('signup');
+                      setAuthError(null);
+                      setAuthInfo(null);
+                    }}
+                    className={`min-h-[40px] rounded font-body text-label-md border transition-colors ${
+                      authMode === 'signup'
+                        ? 'bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary border-transparent'
+                        : 'bg-transparent text-light-on-surface-variant dark:text-dark-on-surface-variant border-light-outline-variant dark:border-dark-outline-variant'
+                    }`}
+                  >
+                    Criar conta
+                  </button>
+                </div>
+
+                {authMode === 'signup' && (
                   <div className="flex flex-col gap-1">
                     <label
-                      htmlFor="cloud-auth-email"
+                      htmlFor="cloud-auth-name"
                       className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant"
                     >
-                      E-mail da conta
+                      Seu nome
                     </label>
                     <input
-                      id="cloud-auth-email"
-                      type="email"
-                      value={authEmail}
-                      onChange={(e) => setAuthEmail(e.target.value)}
-                      required
-                      placeholder="seu@email.com"
+                      id="cloud-auth-name"
+                      type="text"
+                      value={authName}
+                      onChange={(e) => setAuthName(e.target.value)}
+                      placeholder="Nome completo"
                       className="rounded bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface font-body text-body-md px-3 py-2 focus:outline-none focus:border-light-primary dark:focus:border-dark-primary"
                     />
                   </div>
+                )}
 
-                  <div className="flex flex-col gap-1">
-                    <label
-                      htmlFor="cloud-auth-password"
-                      className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant"
-                    >
-                      Senha (mínimo 6 caracteres)
-                    </label>
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor="cloud-auth-email"
+                    className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant"
+                  >
+                    E-mail (Login)
+                  </label>
+                  <input
+                    id="cloud-auth-email"
+                    type="email"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    required
+                    placeholder="seu@email.com"
+                    className="rounded bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface font-body text-body-md px-3 py-2 focus:outline-none focus:border-light-primary dark:focus:border-dark-primary"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor="cloud-auth-password"
+                    className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant"
+                  >
+                    Senha (mínimo 6 caracteres)
+                  </label>
+                  <div className="relative flex items-center">
                     <input
                       id="cloud-auth-password"
-                      type="password"
+                      type={showAuthPassword ? 'text' : 'password'}
                       minLength={6}
                       value={authPassword}
                       onChange={(e) => setAuthPassword(e.target.value)}
                       required
                       placeholder="••••••"
+                      className="w-full rounded bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface font-body text-body-md pl-3 pr-10 py-2 focus:outline-none focus:border-light-primary dark:focus:border-dark-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAuthPassword((prev) => !prev)}
+                      aria-label={showAuthPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                      className="absolute right-2 inline-flex items-center justify-center w-8 h-8 rounded-full text-light-on-surface-variant dark:text-dark-on-surface-variant hover:bg-light-surface-container-high dark:hover:bg-dark-surface-container-high"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">
+                        {showAuthPassword ? 'visibility_off' : 'visibility'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {authMode === 'signup' && (
+                  <div className="flex flex-col gap-1">
+                    <label
+                      htmlFor="cloud-auth-confirm"
+                      className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant"
+                    >
+                      Confirmar senha
+                    </label>
+                    <input
+                      id="cloud-auth-confirm"
+                      type={showAuthPassword ? 'text' : 'password'}
+                      minLength={6}
+                      value={authConfirmPassword}
+                      onChange={(e) => setAuthConfirmPassword(e.target.value)}
+                      required
+                      placeholder="Repita a senha"
                       className="rounded bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface font-body text-body-md px-3 py-2 focus:outline-none focus:border-light-primary dark:focus:border-dark-primary"
                     />
                   </div>
+                )}
 
-                  {authError && (
-                    <p className="font-body text-body-sm text-red-400">{authError}</p>
-                  )}
-                  {authInfo && (
-                    <p className="font-body text-body-sm text-emerald-400">{authInfo}</p>
-                  )}
+                {!cloudConfigured && (
+                  <p className="font-body text-body-sm text-amber-500">
+                    Serviço de autenticação ainda carregando ou pendente de variáveis de ambiente neste domínio.
+                  </p>
+                )}
 
+                {authError && (
+                  <p className="font-body text-body-sm text-red-400">{authError}</p>
+                )}
+                {authInfo && (
+                  <p className="font-body text-body-sm text-emerald-400">{authInfo}</p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={authBusy}
+                  className="w-full min-h-[44px] inline-flex items-center justify-center rounded-full bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary px-4 py-2 font-body text-label-lg hover:opacity-90 disabled:opacity-60 transition-opacity"
+                >
+                  {authBusy
+                    ? 'Aguarde...'
+                    : authMode === 'login'
+                      ? 'Entrar com Login e Senha'
+                      : 'Criar Minha Conta'}
+                </button>
+
+                {authMode === 'login' && (
                   <button
-                    type="submit"
+                    type="button"
                     disabled={authBusy}
-                    className="w-full min-h-[42px] inline-flex items-center justify-center rounded-full bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary px-4 py-2 font-body text-label-lg hover:opacity-90 disabled:opacity-60 transition-opacity"
+                    onClick={() => {
+                      void handleResetPassword();
+                    }}
+                    className="self-center font-body text-label-sm text-light-primary dark:text-dark-primary hover:underline py-1"
                   >
-                    {authBusy
-                      ? 'Conectando...'
-                      : authMode === 'login'
-                        ? 'Entrar e Sincronizar'
-                        : 'Criar Conta na Nuvem'}
+                    Esqueci minha senha
                   </button>
-                </form>
-              )}
-            </section>
-          )}
+                )}
+              </form>
+            )}
+          </section>
 
           {/* Account Preferences (Order 3 on mobile, placed neatly under Identity on desktop) */}
           <section
