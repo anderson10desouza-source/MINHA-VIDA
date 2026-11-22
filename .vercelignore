@@ -1,0 +1,9 @@
+node_modules
+dist
+bun.lock
+bun.lockb
+design
+workspace
+*.tsbuildinfo
+.env*
+!.env.example

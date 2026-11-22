@@ -1426,7 +1426,7 @@ async function fetchWikipediaAndOpenLibraryText(
 export function createApiApp(): express.Express {
   const app = express();
 
-  app.get('/api/health', (_req, res) => {
+  app.get(['/api', '/api/health'], (_req, res) => {
     res.json({
       ok: true,
       service: 'meu-mundo-minha-vida',
