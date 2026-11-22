@@ -415,6 +415,7 @@ export default function App() {
   const isRestoringFromCloudRef = useRef(false);
   const cloudSyncTimerRef = useRef<number | null>(null);
   const lastLoadedCloudUserRef = useRef<string | null>(null);
+  const lastLocalEditAtRef = useRef<number>(0);
 
   const currentDevotional = DEVOTIONALS[devotionalIndex % DEVOTIONALS.length];
   const todayWordIndex = Math.floor(Date.now() / 86400000) % DAILY_WORDS.length;
@@ -628,10 +629,15 @@ export default function App() {
       };
       latestPayloadRef.current = payload;
       if (cloudSession?.user?.id) {
-        localStorage.setItem(`${STORAGE_KEY}_${cloudSession.user.id}`, JSON.stringify(payload));
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_${cloudSession.user.id}`, JSON.stringify(payload));
+        } catch {
+          // Ignore quota exceeded so cloud sync still executes
+        }
       }
 
       if (cloudSession?.access_token && !isRestoringFromCloudRef.current) {
+        lastLocalEditAtRef.current = Date.now();
         if (cloudSyncTimerRef.current) {
           window.clearTimeout(cloudSyncTimerRef.current);
         }
@@ -640,6 +646,7 @@ export default function App() {
           void saveCloudState(token, payload).then((res) => {
             if (res.ok) {
               setCloudNeedsSchema(false);
+              lastLocalEditAtRef.current = 0;
               if (res.updatedAt) {
                 lastCloudSyncAtRef.current = res.updatedAt;
                 setLastCloudSyncAt(res.updatedAt);
@@ -649,10 +656,10 @@ export default function App() {
             }
             cloudSyncTimerRef.current = null;
           });
-        }, 1200);
+        }, 450);
       }
     } catch {
-      // Ignore quota exceeded silently on mount; user edits will still work in session
+      // Ignore unexpected serialization errors
     }
   }, [
     profile,
@@ -866,16 +873,19 @@ export default function App() {
     const refreshFromCloudIfNewer = async () => {
       if (document.visibilityState !== 'visible') return;
       if (cloudSyncTimerRef.current || isRestoringFromCloudRef.current) return;
+      if (!lastCloudSyncAtRef.current) return;
+      if (Date.now() - lastLocalEditAtRef.current < 15000) return;
       const now = Date.now();
       if (now - lastCheckedAt < 15000) return;
       lastCheckedAt = now;
 
       const fetched = await fetchCloudState(cloudSession.access_token);
       if (!fetched.ok || !fetched.state || !fetched.updatedAt) return;
+      if (cloudSyncTimerRef.current || isRestoringFromCloudRef.current) return;
+      if (Date.now() - lastLocalEditAtRef.current < 15000) return;
       if (
-        !lastCloudSyncAtRef.current ||
         new Date(fetched.updatedAt).getTime() >
-          new Date(lastCloudSyncAtRef.current).getTime()
+        new Date(lastCloudSyncAtRef.current).getTime()
       ) {
         await applyCloudState(fetched.state as Partial<PersistedState>);
         lastCloudSyncAtRef.current = fetched.updatedAt;
@@ -2407,6 +2417,46 @@ export default function App() {
     return { ok: true };
   };
 
+  const handleSaveProfile = (updatedProfile: UserProfile) => {
+    lastLocalEditAtRef.current = Date.now();
+    setProfile(updatedProfile);
+    if (cloudSyncTimerRef.current) {
+      window.clearTimeout(cloudSyncTimerRef.current);
+      cloudSyncTimerRef.current = null;
+    }
+    if (latestPayloadRef.current) {
+      const nextPayload: PersistedState = {
+        ...latestPayloadRef.current,
+        profile: updatedProfile,
+      };
+      latestPayloadRef.current = nextPayload;
+      if (cloudSession?.user?.id) {
+        try {
+          localStorage.setItem(
+            `${STORAGE_KEY}_${cloudSession.user.id}`,
+            JSON.stringify(nextPayload)
+          );
+        } catch {
+          // ignore local quota error
+        }
+      }
+      if (cloudSession?.access_token) {
+        void saveCloudState(cloudSession.access_token, nextPayload).then((res) => {
+          if (res.ok) {
+            setCloudNeedsSchema(false);
+            lastLocalEditAtRef.current = 0;
+            if (res.updatedAt) {
+              lastCloudSyncAtRef.current = res.updatedAt;
+              setLastCloudSyncAt(res.updatedAt);
+            }
+          } else if (res.needsSchema) {
+            setCloudNeedsSchema(true);
+          }
+        });
+      }
+    }
+  };
+
   if (isAuthChecking || !cloudSession) {
     return (
       <AuthGate
@@ -2622,7 +2672,7 @@ export default function App() {
         {activeTab === 'perfil' && (
           <ProfileView
             profile={profile}
-            onSaveProfile={setProfile}
+            onSaveProfile={handleSaveProfile}
             onBack={handleBackFromSubView}
             onShowToast={showToast}
             cloudConfigured={cloudConfigured}

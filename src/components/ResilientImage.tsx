@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 interface ResilientImageProps {
   src: string;
@@ -16,6 +16,10 @@ export const ResilientImage: React.FC<ResilientImageProps> = ({
   initials = 'AO',
 }) => {
   const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [src]);
 
   if (hasError || !src) {
     if (fallbackType === 'avatar') {

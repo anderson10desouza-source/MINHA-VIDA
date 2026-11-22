@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { PhotoItem } from '../types';
+import { compressImageFile } from '../utils/imageCompress';
 import { ResilientImage } from './ResilientImage';
 
 interface PhotosViewProps {
@@ -77,25 +78,24 @@ export const PhotosView: React.FC<PhotosViewProps> = ({
       ? photos
       : photos.filter((p) => p.album === albumFilter);
 
-  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        const title = file.name.replace(/\.[^/.]+$/, '') || 'Nova Foto';
-        onAddPhoto({
-          title,
-          album: albumFilter === 'Todas' ? 'Momentos' : albumFilter,
-          date: 'Hoje',
-          imageUrl: reader.result,
-          artworkPreset: 'fellowship',
-        });
-        onShowToast('Foto adicionada à sua galeria.');
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressedUrl = await compressImageFile(file, 1080, 0.82);
+      const title = file.name.replace(/\.[^/.]+$/, '') || 'Nova Foto';
+      onAddPhoto({
+        title,
+        album: albumFilter === 'Todas' ? 'Momentos' : albumFilter,
+        date: 'Hoje',
+        imageUrl: compressedUrl,
+        artworkPreset: 'fellowship',
+      });
+      onShowToast('Foto adicionada à sua galeria.');
+    } catch {
+      onShowToast('Não foi possível processar esta foto.');
+    }
   };
 
   return (

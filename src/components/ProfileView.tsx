@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { UserProfile } from '../types';
 import { formatDisplayLogin } from '../lib/supabaseClient';
+import { compressImageFile } from '../utils/imageCompress';
 import { ResilientImage } from './ResilientImage';
 
 interface ProfileViewProps {
@@ -77,9 +78,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setPhone(profile.phone);
     setBirthdate(profile.birthdate);
     setCity(profile.city);
-  }, [profile]);
+  }, [profile.fullName, profile.email, profile.phone, profile.birthdate, profile.city]);
 
-  const initials = profile.fullName
+  const initials = (fullName || profile.fullName || 'VC')
     .split(' ')
     .filter(Boolean)
     .slice(0, 2)
@@ -90,7 +91,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     e.preventDefault();
     const trimmedName = fullName.trim();
     const trimmedEmail = email.trim();
-    if (!trimmedName) return;
+    if (!trimmedName) {
+      onShowToast('Informe seu nome completo para salvar.');
+      return;
+    }
 
     onSaveProfile({
       ...profile,
@@ -121,18 +125,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     );
   };
 
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        onSaveProfile({ ...profile, avatarUrl: reader.result });
-        onShowToast('Foto de perfil atualizada com sucesso.');
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressedAvatar = await compressImageFile(file, 420, 0.85);
+      onSaveProfile({
+        ...profile,
+        fullName: fullName.trim() || profile.fullName,
+        email: email.trim(),
+        phone: phone.trim(),
+        birthdate: birthdate.trim(),
+        city: city.trim(),
+        avatarUrl: compressedAvatar,
+      });
+      onShowToast('Foto de perfil atualizada com sucesso.');
+    } catch {
+      onShowToast('Não foi possível processar esta foto.');
+    }
   };
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
@@ -290,10 +301,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant truncate">
                 {profile.email}
               </p>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="font-body text-label-sm text-light-primary dark:text-dark-primary tabular-nums">
                   {profile.memberSince}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="font-body text-label-sm text-light-primary dark:text-dark-primary hover:underline"
+                >
+                  Alterar foto
+                </button>
                 {Boolean(profile.avatarUrl) && (
                   <button
                     type="button"
