@@ -926,8 +926,8 @@ function createApiApp() {
     const rawIdentifier = typeof body.email === "string" && body.email.trim() ? body.email.trim() : typeof body.login === "string" ? body.login.trim() : "";
     const password = typeof body.password === "string" ? body.password : "";
     const fullName = typeof body.fullName === "string" ? body.fullName.trim() : "";
-    if (!rawIdentifier || rawIdentifier.length < 3) {
-      res.status(400).json({ ok: false, error: "Informe um login ou e-mail válido (mínimo 3 caracteres)." });
+    if (!rawIdentifier || rawIdentifier.length < 2) {
+      res.status(400).json({ ok: false, error: "Informe um usuário ou login válido (mínimo 2 caracteres)." });
       return;
     }
     if (password.length < 6) {
@@ -936,9 +936,15 @@ function createApiApp() {
     }
     let resolvedEmail = rawIdentifier.toLowerCase();
     if (!resolvedEmail.includes("@")) {
-      const slug = resolvedEmail.replace(/\s+/g, ".").replace(/[^a-z0-9._-]/g, "");
-      if (slug.length < 3) {
-        res.status(400).json({ ok: false, error: "Use letras ou números para criar o seu login." });
+      const slug = resolvedEmail
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, ".")
+        .replace(/[^a-z0-9._-]/g, "")
+        .replace(/\.{2,}/g, ".")
+        .replace(/^\.+|\.+$/g, "");
+      if (slug.length < 2) {
+        res.status(400).json({ ok: false, error: "Use letras ou números para criar o seu usuário." });
         return;
       }
       resolvedEmail = `${slug}@login.meumundominhavida.app`;

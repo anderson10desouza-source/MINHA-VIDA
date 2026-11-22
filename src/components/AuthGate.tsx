@@ -25,7 +25,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
   onSignUp,
   onResetPassword,
 }) => {
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [mode, setMode] = useState<'login' | 'signup'>('signup');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -61,8 +61,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({
       setErrorMsg('Informe seu nome completo para criar a conta.');
       return;
     }
-    if (!cleanEmail || cleanEmail.length < 3 || password.length < 6) {
-      setErrorMsg('Informe um login ou e-mail válido e senha com no mínimo 6 caracteres.');
+    if (!cleanEmail || cleanEmail.length < 2 || password.length < 6) {
+      setErrorMsg('Informe um usuário válido (mínimo 2 caracteres) e senha de pelo menos 6 caracteres.');
       return;
     }
     if (mode === 'signup' && password !== confirmPassword) {
@@ -138,28 +138,13 @@ export const AuthGate: React.FC<AuthGateProps> = ({
               Meu Mundo Minha Vida
             </h1>
             <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
-              Cadastre seu login e senha e entre na hora, sem precisar confirmar por e-mail.
+              Cadastre seu usuário e senha em segundos para começar a usar — não precisa de e-mail.
             </p>
           </div>
         </div>
 
         {/* Mode Switcher */}
         <div className="grid grid-cols-2 gap-2 p-1 rounded-lg bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant">
-          <button
-            type="button"
-            onClick={() => {
-              setMode('login');
-              setErrorMsg(null);
-              setInfoMsg(null);
-            }}
-            className={`min-h-[40px] rounded-md font-body text-label-lg transition-colors ${
-              mode === 'login'
-                ? 'bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary'
-                : 'text-light-on-surface-variant dark:text-dark-on-surface-variant hover:text-light-on-surface dark:hover:text-dark-on-surface'
-            }`}
-          >
-            Entrar
-          </button>
           <button
             type="button"
             onClick={() => {
@@ -174,6 +159,21 @@ export const AuthGate: React.FC<AuthGateProps> = ({
             }`}
           >
             Criar conta
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode('login');
+              setErrorMsg(null);
+              setInfoMsg(null);
+            }}
+            className={`min-h-[40px] rounded-md font-body text-label-lg transition-colors ${
+              mode === 'login'
+                ? 'bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary'
+                : 'text-light-on-surface-variant dark:text-dark-on-surface-variant hover:text-light-on-surface dark:hover:text-dark-on-surface'
+            }`}
+          >
+            Entrar
           </button>
         </div>
 
@@ -205,7 +205,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
               htmlFor="gate-email"
               className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant"
             >
-              Login ou E-mail
+              Usuário (Login)
             </label>
             <input
               id="gate-email"
@@ -214,7 +214,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              placeholder="seu.login ou seu@email.com"
+              placeholder="Escolha um usuário (ex: joao.silva)"
               className="rounded-lg bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface font-body text-body-md px-3.5 py-2.5 focus:outline-none focus:border-light-primary dark:focus:border-dark-primary"
             />
           </div>

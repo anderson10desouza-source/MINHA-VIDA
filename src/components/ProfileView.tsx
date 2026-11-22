@@ -170,8 +170,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     const cleanPwd = authPassword;
     const cleanName = authName.trim();
 
-    if (!cleanEmail || cleanEmail.length < 3 || cleanPwd.length < 6) {
-      setAuthError('Informe um login ou e-mail válido e senha com no mínimo 6 caracteres.');
+    if (!cleanEmail || cleanEmail.length < 2 || cleanPwd.length < 6) {
+      setAuthError('Informe um usuário válido (mínimo 2 caracteres) e senha com no mínimo 6 caracteres.');
       return;
     }
 
@@ -508,7 +508,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     htmlFor="cloud-auth-email"
                     className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant"
                   >
-                    Login ou E-mail
+                    Usuário (Login)
                   </label>
                   <input
                     id="cloud-auth-email"
@@ -517,7 +517,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     value={authEmail}
                     onChange={(e) => setAuthEmail(e.target.value)}
                     required
-                    placeholder="seu.login ou seu@email.com"
+                    placeholder="seu.usuario"
                     className="rounded bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface font-body text-body-md px-3 py-2 focus:outline-none focus:border-light-primary dark:focus:border-dark-primary"
                   />
                 </div>

@@ -94,8 +94,14 @@ export function normalizeLoginIdentifier(raw: string): string {
   const trimmed = raw.trim().toLowerCase();
   if (!trimmed) return '';
   if (trimmed.includes('@')) return trimmed;
-  const slug = trimmed.replace(/\s+/g, '.').replace(/[^a-z0-9._-]/g, '');
-  return slug ? `${slug}${SYNTHETIC_LOGIN_DOMAIN}` : '';
+  const slug = trimmed
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '.')
+    .replace(/[^a-z0-9._-]/g, '')
+    .replace(/\.{2,}/g, '.')
+    .replace(/^\.+|\.+$/g, '');
+  return slug.length >= 2 ? `${slug}${SYNTHETIC_LOGIN_DOMAIN}` : '';
 }
 
 export function formatDisplayLogin(emailOrLogin: string): string {
