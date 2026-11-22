@@ -1,4 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import {
+  fetchCloudState,
+  getSupabaseClient,
+  saveCloudState,
+} from './lib/supabaseClient';
 import { AgendaModal } from './components/AgendaModal';
 import { BooksView } from './components/BooksView';
 import { BottomNav } from './components/BottomNav';
@@ -388,6 +394,16 @@ export default function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimerRef = useRef<number | null>(null);
 
+  const [cloudConfigured, setCloudConfigured] = useState(false);
+  const [cloudSession, setCloudSession] = useState<Session | null>(null);
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [lastCloudSyncAt, setLastCloudSyncAt] = useState<string | null>(null);
+  const [cloudNeedsSchema, setCloudNeedsSchema] = useState(false);
+  const latestPayloadRef = useRef<PersistedState | null>(null);
+  const isRestoringFromCloudRef = useRef(false);
+  const cloudSyncTimerRef = useRef<number | null>(null);
+  const lastLoadedCloudUserRef = useRef<string | null>(null);
+
   const currentDevotional = DEVOTIONALS[devotionalIndex % DEVOTIONALS.length];
   const todayWordIndex = Math.floor(Date.now() / 86400000) % DAILY_WORDS.length;
   const todayWord = DAILY_WORDS[todayWordIndex];
@@ -598,7 +614,25 @@ export default function App() {
         manualOffline,
         isDarkMode,
       };
+      latestPayloadRef.current = payload;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+
+      if (cloudSession?.access_token && !isRestoringFromCloudRef.current) {
+        if (cloudSyncTimerRef.current) {
+          window.clearTimeout(cloudSyncTimerRef.current);
+        }
+        const token = cloudSession.access_token;
+        cloudSyncTimerRef.current = window.setTimeout(() => {
+          void saveCloudState(token, payload).then((res) => {
+            if (res.ok) {
+              setCloudNeedsSchema(false);
+              if (res.updatedAt) setLastCloudSyncAt(res.updatedAt);
+            } else if (res.needsSchema) {
+              setCloudNeedsSchema(true);
+            }
+          });
+        }, 1200);
+      }
     } catch {
       // Ignore quota exceeded silently on mount; user edits will still work in session
     }
@@ -639,7 +673,139 @@ export default function App() {
     trips,
     manualOffline,
     isDarkMode,
+    cloudSession,
   ]);
+
+  const applyCloudState = async (remote: Partial<PersistedState>) => {
+    isRestoringFromCloudRef.current = true;
+    try {
+      const audioMap = await loadAllDevotionalAudios();
+      if (remote.profile) setProfile(remote.profile);
+      if (Array.isArray(remote.agenda)) setAgenda(remote.agenda);
+      if (Array.isArray(remote.tasks)) setTasks(remote.tasks);
+      if (Array.isArray(remote.contacts)) setContacts(remote.contacts);
+      if (Array.isArray(remote.photos)) setPhotos(remote.photos);
+      if (Array.isArray(remote.threads)) setThreads(remote.threads);
+      if (remote.devotionalNotes) setDevotionalNotes(remote.devotionalNotes);
+      if (Array.isArray(remote.personalDevotionals)) {
+        setPersonalDevotionals(
+          remote.personalDevotionals.map((d) =>
+            !d.audioDataUrl && audioMap[d.id] ? { ...d, audioDataUrl: audioMap[d.id] } : d
+          )
+        );
+      }
+      if (typeof remote.readingMinutes === 'number') setReadingMinutes(remote.readingMinutes);
+      if (Array.isArray(remote.favoriteDevotionalIds)) {
+        setFavoriteDevotionalIds(remote.favoriteDevotionalIds);
+      }
+      if (Array.isArray(remote.favoriteTrackIds)) setFavoriteTrackIds(remote.favoriteTrackIds);
+      if (Array.isArray(remote.favoritePodcastIds)) {
+        setFavoritePodcastIds(remote.favoritePodcastIds);
+      }
+      if (Array.isArray(remote.favoriteRadioIds)) setFavoriteRadioIds(remote.favoriteRadioIds);
+      if (Array.isArray(remote.history)) setHistory(remote.history);
+      if (remote.widgets) setWidgets({ ...DEFAULT_WIDGETS, ...remote.widgets });
+      if (Array.isArray(remote.financeTransactions)) {
+        setFinanceTransactions(remote.financeTransactions);
+      }
+      if (remote.financeBudgets) {
+        setFinanceBudgets({ ...INITIAL_FINANCE_BUDGETS, ...remote.financeBudgets });
+      }
+      if (Array.isArray(remote.investments)) setInvestments(remote.investments);
+      if (Array.isArray(remote.books)) {
+        setBooks(
+          remote.books.map((b) =>
+            !b.audioDataUrl && audioMap[`book-${b.id}`]
+              ? { ...b, audioDataUrl: audioMap[`book-${b.id}`] }
+              : b
+          )
+        );
+      }
+      if (Array.isArray(remote.calcHistory)) setCalcHistory(remote.calcHistory);
+      if (Array.isArray(remote.savedYouTubeVideos)) setSavedYtVideos(remote.savedYouTubeVideos);
+      if (Array.isArray(remote.recentYouTubeVideos)) setRecentYtVideos(remote.recentYouTubeVideos);
+      if (Array.isArray(remote.studySubjects)) setStudySubjects(remote.studySubjects);
+      if (Array.isArray(remote.studyTopics)) setStudyTopics(remote.studyTopics);
+      if (Array.isArray(remote.studySchedule)) setStudySchedule(remote.studySchedule);
+      if (Array.isArray(remote.studyOthers)) setStudyOthers(remote.studyOthers);
+      if (Array.isArray(remote.favoriteStudyTipIds)) {
+        setFavoriteStudyTipIds(remote.favoriteStudyTipIds);
+      }
+      if (Array.isArray(remote.groceryItems)) setGroceryItems(remote.groceryItems);
+      if (Array.isArray(remote.pantryItems)) setPantryItems(remote.pantryItems);
+      if (Array.isArray(remote.groceryHistory)) setGroceryHistory(remote.groceryHistory);
+      if (typeof remote.groceryBudget === 'number') setGroceryBudget(remote.groceryBudget);
+      if (Array.isArray(remote.notes)) setNotes(remote.notes);
+      if (Array.isArray(remote.goals)) setGoals(remote.goals);
+      if (Array.isArray(remote.trips)) setTrips(remote.trips);
+      if (typeof remote.manualOffline === 'boolean') setManualOffline(remote.manualOffline);
+      if (typeof remote.isDarkMode === 'boolean') setIsDarkMode(remote.isDarkMode);
+    } finally {
+      window.setTimeout(() => {
+        isRestoringFromCloudRef.current = false;
+      }, 150);
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    let subscription: { unsubscribe: () => void } | null = null;
+
+    const syncOnSession = async (session: Session | null) => {
+      if (!active) return;
+      setCloudSession(session);
+      if (!session?.access_token || !session.user?.id) {
+        lastLoadedCloudUserRef.current = null;
+        return;
+      }
+      if (lastLoadedCloudUserRef.current === session.user.id) return;
+      lastLoadedCloudUserRef.current = session.user.id;
+
+      setIsCloudSyncing(true);
+      try {
+        const fetched = await fetchCloudState(session.access_token);
+        if (!active) return;
+        if (!fetched.ok) {
+          if (fetched.needsSchema) setCloudNeedsSchema(true);
+          return;
+        }
+        setCloudNeedsSchema(false);
+        if (fetched.state) {
+          await applyCloudState(fetched.state as Partial<PersistedState>);
+          if (fetched.updatedAt) setLastCloudSyncAt(fetched.updatedAt);
+        } else if (latestPayloadRef.current) {
+          const pushed = await saveCloudState(session.access_token, latestPayloadRef.current);
+          if (pushed.ok && pushed.updatedAt) {
+            setLastCloudSyncAt(pushed.updatedAt);
+          } else if (pushed.needsSchema) {
+            setCloudNeedsSchema(true);
+          }
+        }
+      } finally {
+        if (active) setIsCloudSyncing(false);
+      }
+    };
+
+    void getSupabaseClient().then((supabase) => {
+      if (!active || !supabase) return;
+      setCloudConfigured(true);
+      void supabase.auth.getSession().then(({ data }) => {
+        void syncOnSession(data.session ?? null);
+      });
+      const listener = supabase.auth.onAuthStateChange((_event, nextSession) => {
+        void syncOnSession(nextSession ?? null);
+      });
+      subscription = listener.data.subscription;
+    });
+
+    return () => {
+      active = false;
+      subscription?.unsubscribe();
+      if (cloudSyncTimerRef.current) {
+        window.clearTimeout(cloudSyncTimerRef.current);
+      }
+    };
+  }, []);
 
   // Progress ticker for fallback WAV tracks, podcasts, and radio timer
   useEffect(() => {
@@ -2202,6 +2368,75 @@ export default function App() {
             onSaveProfile={setProfile}
             onBack={handleBackFromSubView}
             onShowToast={showToast}
+            cloudConfigured={cloudConfigured}
+            cloudEmail={cloudSession?.user?.email ?? null}
+            isCloudSyncing={isCloudSyncing}
+            lastCloudSyncAt={lastCloudSyncAt}
+            cloudNeedsSchema={cloudNeedsSchema}
+            onCloudSignIn={async (authEmail, authPassword) => {
+              const supabase = await getSupabaseClient();
+              if (!supabase) return { ok: false, error: 'Supabase não configurado.' };
+              const { error } = await supabase.auth.signInWithPassword({
+                email: authEmail,
+                password: authPassword,
+              });
+              if (error) return { ok: false, error: error.message };
+              showToast('Conta conectada e sincronizada com o banco de dados.');
+              return { ok: true };
+            }}
+            onCloudSignUp={async (authEmail, authPassword) => {
+              const supabase = await getSupabaseClient();
+              if (!supabase) return { ok: false, error: 'Supabase não configurado.' };
+              const { data, error } = await supabase.auth.signUp({
+                email: authEmail,
+                password: authPassword,
+                options: {
+                  data: { full_name: profile.fullName },
+                },
+              });
+              if (error) return { ok: false, error: error.message };
+              const needsEmailConfirm = !data.session;
+              showToast(
+                needsEmailConfirm
+                  ? 'Conta criada! Confirme o e-mail enviado.'
+                  : 'Conta criada e sincronizada com o banco de dados!'
+              );
+              return { ok: true, needsEmailConfirm };
+            }}
+            onCloudSignOut={async () => {
+              const supabase = await getSupabaseClient();
+              if (!supabase) return;
+              await supabase.auth.signOut();
+              setLastCloudSyncAt(null);
+              showToast('Sessão desconectada.');
+            }}
+            onCloudSyncNow={async () => {
+              if (!cloudSession?.access_token || !latestPayloadRef.current) return;
+              setIsCloudSyncing(true);
+              try {
+                const res = await saveCloudState(
+                  cloudSession.access_token,
+                  latestPayloadRef.current
+                );
+                if (res.ok) {
+                  setCloudNeedsSchema(false);
+                  if (res.updatedAt) setLastCloudSyncAt(res.updatedAt);
+                  showToast('Dados sincronizados no Supabase.');
+                } else {
+                  if (res.needsSchema) setCloudNeedsSchema(true);
+                  showToast(res.error || 'Falha ao sincronizar.');
+                }
+              } finally {
+                setIsCloudSyncing(false);
+              }
+            }}
+            onCloudUpdatePassword={async (newPassword) => {
+              const supabase = await getSupabaseClient();
+              if (!supabase) return { ok: false, error: 'Supabase não configurado.' };
+              const { error } = await supabase.auth.updateUser({ password: newPassword });
+              if (error) return { ok: false, error: error.message };
+              return { ok: true };
+            }}
           />
         )}
 

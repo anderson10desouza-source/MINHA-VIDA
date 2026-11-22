@@ -1,9 +1,13 @@
-import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createApiApp } from './_lib/apiApp';
+import { createApiApp } from './_lib/apiApp.mjs';
 
 const app = createApiApp();
 
-export default function handler(req: IncomingMessage, res: ServerResponse) {
+/**
+ * Vercel Serverless Function entrypoint for all /api/* routes.
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ */
+export default function handler(req, res) {
   const rawUrl = req.url || '/';
   const parsed = new URL(rawUrl, 'http://localhost');
 
@@ -16,5 +20,5 @@ export default function handler(req: IncomingMessage, res: ServerResponse) {
     req.url = `/api/${cleanSubPath}${qs ? `?${qs}` : ''}`;
   }
 
-  return app(req as Parameters<typeof app>[0], res as Parameters<typeof app>[1]);
+  return app(req, res);
 }

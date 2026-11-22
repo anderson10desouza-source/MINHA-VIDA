@@ -56,6 +56,10 @@ git push -u origin main
    - **Output Directory**: `dist`
    - **API Serverless (`/api/*`)**: Todas as rotas de busca/proxy (YouTube, músicas, rádios, podcasts, taxas financeiras, livros e `/api/health`) são atendidas pela função serverless da Vercel.
    - **SPA & PWA**: Reescrita de rotas do aplicativo e cabeçalhos corretos para `manifest.webmanifest` e `sw.js`.
-3. Não é obrigatório configurar variáveis de ambiente para o funcionamento principal.
+3. Para ativar o banco de dados **Supabase** em produção, execute uma vez o script SQL de criação das tabelas no **SQL Editor** do Supabase (`supabase/schema.sql`) e adicione as 4 variáveis em **Project Settings → Environment Variables** na Vercel:
+   - `SUPABASE_URL`
+   - `SUPABASE_PUBLISHABLE_KEY`
+   - `SUPABASE_SECRET_KEY`
+   - `SUPABASE_JWKS_URL`
 4. Após o deploy em **Produção** (branch `main`), teste `https://seu-dominio.vercel.app/api/health` — o retorno esperado é `{ "ok": true, ... }`.
    - *Observação*: URLs temporárias de **Preview** (`*-equipe.vercel.app`) podem exigir login caso **Deployment Protection / Vercel Authentication** esteja ativado nas configurações da Vercel; use sempre o domínio de **Produção** ou ajuste a proteção em **Project Settings → Deployment Protection**.

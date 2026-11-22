@@ -8,6 +8,24 @@ interface ProfileViewProps {
   onSaveProfile: (updated: UserProfile) => void;
   onBack: () => void;
   onShowToast: (msg: string) => void;
+  cloudConfigured?: boolean;
+  cloudEmail?: string | null;
+  isCloudSyncing?: boolean;
+  lastCloudSyncAt?: string | null;
+  cloudNeedsSchema?: boolean;
+  onCloudSignIn?: (
+    email: string,
+    password: string
+  ) => Promise<{ ok: boolean; error?: string }>;
+  onCloudSignUp?: (
+    email: string,
+    password: string
+  ) => Promise<{ ok: boolean; error?: string; needsEmailConfirm?: boolean }>;
+  onCloudSignOut?: () => Promise<void>;
+  onCloudSyncNow?: () => Promise<void>;
+  onCloudUpdatePassword?: (
+    newPassword: string
+  ) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -15,6 +33,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onSaveProfile,
   onBack,
   onShowToast,
+  cloudConfigured = false,
+  cloudEmail = null,
+  isCloudSyncing = false,
+  lastCloudSyncAt = null,
+  cloudNeedsSchema = false,
+  onCloudSignIn,
+  onCloudSignUp,
+  onCloudSignOut,
+  onCloudSyncNow,
+  onCloudUpdatePassword,
 }) => {
   const [fullName, setFullName] = useState(profile.fullName);
   const [email, setEmail] = useState(profile.email);
@@ -24,6 +52,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [currentPwd, setCurrentPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
+
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authEmail, setAuthEmail] = useState(profile.email || '');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authInfo, setAuthInfo] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -91,13 +126,59 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     reader.readAsDataURL(file);
   };
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentPwd.trim() || newPwd.trim().length < 6) return;
+
+    if (cloudEmail && onCloudUpdatePassword) {
+      const result = await onCloudUpdatePassword(newPwd.trim());
+      if (!result.ok) {
+        onShowToast(result.error || 'Não foi possível alterar a senha.');
+        return;
+      }
+    }
+
     setCurrentPwd('');
     setNewPwd('');
     setShowPasswordModal(false);
     onShowToast('Senha atualizada com segurança.');
+  };
+
+  const handleCloudAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = authEmail.trim();
+    const cleanPwd = authPassword;
+    if (!cleanEmail || cleanPwd.length < 6) {
+      setAuthError('Informe um e-mail válido e senha com no mínimo 6 caracteres.');
+      return;
+    }
+
+    setAuthError(null);
+    setAuthInfo(null);
+    setAuthBusy(true);
+
+    try {
+      if (authMode === 'login' && onCloudSignIn) {
+        const res = await onCloudSignIn(cleanEmail, cleanPwd);
+        if (!res.ok) {
+          setAuthError(res.error || 'E-mail ou senha inválidos.');
+        } else {
+          setAuthPassword('');
+        }
+      } else if (authMode === 'signup' && onCloudSignUp) {
+        const res = await onCloudSignUp(cleanEmail, cleanPwd);
+        if (!res.ok) {
+          setAuthError(res.error || 'Não foi possível criar a conta.');
+        } else {
+          setAuthPassword('');
+          if (res.needsEmailConfirm) {
+            setAuthInfo('Conta criada! Verifique seu e-mail para confirmar e entrar.');
+          }
+        }
+      }
+    } finally {
+      setAuthBusy(false);
+    }
   };
 
   return (
@@ -185,6 +266,179 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
             </div>
           </section>
+
+          {/* Cloud Account & Sync (Supabase) */}
+          {cloudConfigured && (
+            <section
+              aria-labelledby="heading-conta-nuvem"
+              className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-4 flex flex-col gap-3"
+            >
+              <header className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="material-symbols-outlined text-[20px] text-light-primary dark:text-dark-primary"
+                    aria-hidden="true"
+                  >
+                    cloud_sync
+                  </span>
+                  <h2
+                    id="heading-conta-nuvem"
+                    className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface"
+                  >
+                    Sincronização na Nuvem
+                  </h2>
+                </div>
+              </header>
+
+              {cloudEmail ? (
+                <div className="flex flex-col gap-3">
+                  <div className="rounded bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant p-3 flex flex-col gap-1">
+                    <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
+                      Conta conectada
+                    </span>
+                    <span className="font-body text-body-md text-light-on-surface dark:text-dark-on-surface truncate">
+                      {cloudEmail}
+                    </span>
+                    {lastCloudSyncAt && (
+                      <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
+                        Último salvamento:{' '}
+                        {new Date(lastCloudSyncAt).toLocaleTimeString('pt-BR', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                    )}
+                  </div>
+
+                  {cloudNeedsSchema && (
+                    <p className="font-body text-body-sm text-amber-500">
+                      Execute o script SQL de criação das tabelas no seu projeto Supabase para ativar o salvamento remoto.
+                    </p>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isCloudSyncing}
+                      onClick={() => {
+                        void onCloudSyncNow?.();
+                      }}
+                      className="flex-1 min-h-[42px] inline-flex items-center justify-center gap-1.5 rounded-full bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary font-body text-label-md px-4 py-2 hover:opacity-90 disabled:opacity-60 transition-opacity"
+                    >
+                      <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                        sync
+                      </span>
+                      {isCloudSyncing ? 'Sincronizando...' : 'Sincronizar agora'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void onCloudSignOut?.();
+                      }}
+                      className="min-h-[42px] inline-flex items-center justify-center rounded-full border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface font-body text-label-md px-4 py-2 hover:bg-light-surface-container-high dark:hover:bg-dark-surface-container-high transition-colors"
+                    >
+                      Sair
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleCloudAuthSubmit} className="flex flex-col gap-3">
+                  <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
+                    Entre ou crie sua conta para salvar agenda, finanças, supermercado, notas, metas e viagens no banco de dados.
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('login');
+                        setAuthError(null);
+                        setAuthInfo(null);
+                      }}
+                      className={`min-h-[38px] rounded font-body text-label-md border transition-colors ${
+                        authMode === 'login'
+                          ? 'bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary border-transparent'
+                          : 'bg-transparent text-light-on-surface-variant dark:text-dark-on-surface-variant border-light-outline-variant dark:border-dark-outline-variant'
+                      }`}
+                    >
+                      Entrar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('signup');
+                        setAuthError(null);
+                        setAuthInfo(null);
+                      }}
+                      className={`min-h-[38px] rounded font-body text-label-md border transition-colors ${
+                        authMode === 'signup'
+                          ? 'bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary border-transparent'
+                          : 'bg-transparent text-light-on-surface-variant dark:text-dark-on-surface-variant border-light-outline-variant dark:border-dark-outline-variant'
+                      }`}
+                    >
+                      Criar conta
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label
+                      htmlFor="cloud-auth-email"
+                      className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant"
+                    >
+                      E-mail da conta
+                    </label>
+                    <input
+                      id="cloud-auth-email"
+                      type="email"
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      required
+                      placeholder="seu@email.com"
+                      className="rounded bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface font-body text-body-md px-3 py-2 focus:outline-none focus:border-light-primary dark:focus:border-dark-primary"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label
+                      htmlFor="cloud-auth-password"
+                      className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant"
+                    >
+                      Senha (mínimo 6 caracteres)
+                    </label>
+                    <input
+                      id="cloud-auth-password"
+                      type="password"
+                      minLength={6}
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      required
+                      placeholder="••••••"
+                      className="rounded bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface font-body text-body-md px-3 py-2 focus:outline-none focus:border-light-primary dark:focus:border-dark-primary"
+                    />
+                  </div>
+
+                  {authError && (
+                    <p className="font-body text-body-sm text-red-400">{authError}</p>
+                  )}
+                  {authInfo && (
+                    <p className="font-body text-body-sm text-emerald-400">{authInfo}</p>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={authBusy}
+                    className="w-full min-h-[42px] inline-flex items-center justify-center rounded-full bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary px-4 py-2 font-body text-label-lg hover:opacity-90 disabled:opacity-60 transition-opacity"
+                  >
+                    {authBusy
+                      ? 'Conectando...'
+                      : authMode === 'login'
+                        ? 'Entrar e Sincronizar'
+                        : 'Criar Conta na Nuvem'}
+                  </button>
+                </form>
+              )}
+            </section>
+          )}
 
           {/* Account Preferences (Order 3 on mobile, placed neatly under Identity on desktop) */}
           <section
