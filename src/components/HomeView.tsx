@@ -12,6 +12,7 @@ import {
   UserProfile,
 } from '../types';
 import { MediaMenuStrip } from './MediaMenuStrip';
+import { PWAInstallBanner } from './OfflineModeBar';
 import { ResilientImage } from './ResilientImage';
 import { UsefulWidgets } from './UsefulWidgets';
 
@@ -299,6 +300,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
         </div>
       </header>
+
+      <PWAInstallBanner />
 
       {/* Quick Global Search Bar -> Opens Busca e Filtro */}
       <div className="px-4 lg:px-8 pb-2">

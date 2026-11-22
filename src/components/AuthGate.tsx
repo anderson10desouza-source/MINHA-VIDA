@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { PWAInstallButton } from './OfflineModeBar';
 
 interface AuthGateProps {
   isCheckingSession: boolean;
@@ -315,6 +316,10 @@ export const AuthGate: React.FC<AuthGateProps> = ({
             </button>
           )}
         </form>
+
+        <div className="pt-3 border-t border-light-outline-variant dark:border-dark-outline-variant flex flex-col gap-2">
+          <PWAInstallButton label="Baixar Aplicativo no Dispositivo" fullWidth />
+        </div>
       </div>
     </div>
   );
