@@ -16,6 +16,7 @@ import {
   NoteEntry,
   PantryItem,
   PersonalDevotional,
+  PhotoItem,
   PodcastEpisode,
   RadioStation,
   StudySubject,
@@ -32,6 +33,7 @@ interface ExploreViewProps {
   tracks: MusicTrack[];
   podcasts: PodcastEpisode[];
   stations: RadioStation[];
+  photos?: PhotoItem[];
   youtubeVideos: YouTubeVideoItem[];
   agenda: AgendaItem[];
   contacts: ContactItem[];
@@ -76,6 +78,7 @@ type ExploreFilter =
   | 'musicas'
   | 'podcasts'
   | 'radios'
+  | 'imagens'
   | 'youtube'
   | 'financas'
   | 'supermercado'
@@ -124,6 +127,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   tracks,
   podcasts,
   stations,
+  photos = [],
   youtubeVideos,
   agenda,
   contacts,
@@ -217,6 +221,13 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       s.name.toLowerCase().includes(q) ||
       s.genre.toLowerCase().includes(q) ||
       s.program.toLowerCase().includes(q)
+  );
+
+  const filteredPhotos = photos.filter(
+    (p) =>
+      p.title.toLowerCase().includes(q) ||
+      p.album.toLowerCase().includes(q) ||
+      p.date.toLowerCase().includes(q)
   );
 
   const filteredAgenda = agenda.filter(
@@ -353,6 +364,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               { id: 'musicas', label: 'Músicas' },
               { id: 'podcasts', label: 'Podcasts' },
               { id: 'radios', label: 'Rádios' },
+              { id: 'imagens', label: 'Imagens' },
               { id: 'youtube', label: 'YouTube' },
               { id: 'financas', label: 'Finanças' },
               { id: 'supermercado', label: 'Supermercado' },
@@ -392,7 +404,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               Ferramentas &amp; Módulos ({filteredTools.length})
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
-              {filteredTools.slice(0, filter === 'tudo' && !q ? 8 : 24).map((tool) => (
+              {filteredTools.map((tool) => (
                 <button
                   key={tool.id}
                   type="button"
@@ -431,7 +443,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {filteredJournal.slice(0, 6).map((entry) => (
+              {filteredJournal.map((entry) => (
                 <article
                   key={entry.id}
                   onClick={() => onNavigate('diario')}
@@ -469,7 +481,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {filteredHabits.slice(0, 6).map((habit) => (
+              {filteredHabits.map((habit) => (
                 <article
                   key={habit.id}
                   onClick={() => onNavigate('habitos')}
@@ -582,7 +594,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filteredTracks.slice(0, 9).map((track) => {
+              {filteredTracks.map((track) => {
                 const fav = favoriteTrackIds.includes(track.id);
                 const active = currentTrackId === track.id && isPlaying;
                 return (
@@ -656,11 +668,11 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 onClick={() => onNavigate('podcast')}
                 className="font-body text-body-sm text-light-primary dark:text-dark-primary hover:underline"
               >
-                Catálogo completo
+                Buscar sem limites &amp; baixar
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {filteredPodcasts.slice(0, 6).map((ep) => {
+              {filteredPodcasts.map((ep) => {
                 const active = activePodcastId === ep.id && isPodcastPlaying;
                 return (
                   <article
@@ -703,11 +715,11 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 onClick={() => onNavigate('radio')}
                 className="font-body text-body-sm text-light-primary dark:text-dark-primary hover:underline"
               >
-                Buscar estações
+                Buscar rádios do mundo &amp; gravar
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filteredStations.slice(0, 6).map((st) => {
+              {filteredStations.map((st) => {
                 const active = activeRadioId === st.id && isRadioPlaying;
                 return (
                   <article
@@ -739,6 +751,57 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           </section>
         )}
 
+        {(filter === 'tudo' || filter === 'imagens') && (
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface">
+                Fotos e Imagens ({filteredPhotos.length})
+              </h2>
+              <button
+                type="button"
+                onClick={() => onNavigate('fotos')}
+                className="font-body text-body-sm text-light-primary dark:text-dark-primary hover:underline"
+              >
+                Buscar imagens online &amp; baixar
+              </button>
+            </div>
+            {filteredPhotos.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {filteredPhotos.map((ph) => (
+                  <article
+                    key={ph.id}
+                    onClick={() => onNavigate('fotos')}
+                    className="cursor-pointer rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant hover:border-light-primary dark:hover:border-dark-primary overflow-hidden flex flex-col"
+                  >
+                    <div className="aspect-[4/3] w-full bg-dark-surface-container overflow-hidden">
+                      {ph.imageUrl ? (
+                        <ResilientImage
+                          src={ph.imageUrl}
+                          alt={ph.title}
+                          fallbackType="album"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-light-on-surface-variant dark:text-dark-on-surface-variant">
+                          <span className="material-symbols-outlined text-[28px]">photo</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-2.5">
+                      <h3 className="font-body text-label-md text-light-on-surface dark:text-dark-on-surface truncate">
+                        {ph.title}
+                      </h3>
+                      <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
+                        {ph.album}
+                      </span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         {(filter === 'tudo' || filter === 'youtube') && filteredYouTube.length > 0 && (
           <section className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
@@ -754,7 +817,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filteredYouTube.slice(0, 6).map((v) => (
+              {filteredYouTube.map((v) => (
                 <article
                   key={v.videoId}
                   className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-3 flex items-center justify-between gap-3"
@@ -868,7 +931,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 </button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {filteredFinance.slice(0, 8).map((tx) => {
+                {filteredFinance.map((tx) => {
                   const isExpense = tx.type === 'gasto';
                   return (
                     <article
@@ -1074,7 +1137,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 </button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {filteredGroceryItems.slice(0, 8).map((g) => (
+                {filteredGroceryItems.map((g) => (
                   <article
                     key={g.id}
                     className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-3 flex items-center justify-between gap-3"
@@ -1092,7 +1155,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                     </span>
                   </article>
                 ))}
-                {filteredPantryItems.slice(0, 4).map((p) => (
+                {filteredPantryItems.map((p) => (
                   <article
                     key={p.id}
                     className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-3 flex items-center justify-between gap-3"
@@ -1129,7 +1192,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {filteredNotes.slice(0, 8).map((note) => (
+              {filteredNotes.map((note) => (
                 <article
                   key={note.id}
                   onClick={() => onNavigate('notas')}
@@ -1181,7 +1244,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {filteredGoals.slice(0, 8).map((goal) => (
+              {filteredGoals.map((goal) => (
                 <article
                   key={goal.id}
                   onClick={() => onNavigate('metas')}
@@ -1223,7 +1286,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {filteredTrips.slice(0, 6).map((trip) => (
+              {filteredTrips.map((trip) => (
                 <article
                   key={trip.id}
                   onClick={() => onNavigate('viagens')}

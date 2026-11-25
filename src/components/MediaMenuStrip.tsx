@@ -75,10 +75,10 @@ export const MEDIA_MENU_ITEMS: MediaMenuItem[] = [
   },
   {
     id: 'radio',
-    label: 'Rádio',
+    label: 'Rádio & Web',
     icon: 'radio',
     accentClass: 'text-cat-emerald',
-    subtitle: 'Estações ao vivo',
+    subtitle: 'FM e Rádio Web ao vivo',
   },
   {
     id: 'financas',

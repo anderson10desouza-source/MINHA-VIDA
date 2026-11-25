@@ -28,7 +28,7 @@ import { InvestmentsView } from './components/InvestmentsView';
 import { JournalView } from './components/JournalView';
 import { MessagesView } from './components/MessagesView';
 import { MoreView } from './components/MoreView';
-import { MusicView } from './components/MusicView';
+import { MusicSourceFilter, MusicView } from './components/MusicView';
 import { NotesView } from './components/NotesView';
 import { NowPlayingBar } from './components/NowPlayingBar';
 import { PerformanceView } from './components/PerformanceView';
@@ -164,6 +164,7 @@ interface PersistedState {
   journalEntries?: JournalEntry[];
   assistantMessages?: AssistantMessage[];
   customization?: AppCustomizationState;
+  customWebRadios?: RadioStation[];
   manualOffline: boolean;
   isDarkMode: boolean;
 }
@@ -237,6 +238,7 @@ function createBlankPersistedState(email = '', fullName = ''): PersistedState {
       visibleHomeSections: { ...DEFAULT_CUSTOMIZATION.visibleHomeSections },
       homeSectionOrder: [...DEFAULT_CUSTOMIZATION.homeSectionOrder],
     },
+    customWebRadios: [],
     manualOffline: false,
     isDarkMode: true,
   };
@@ -315,6 +317,7 @@ function loadUserCachedState(
                 : [...DEFAULT_HOME_SECTION_ORDER],
             }
           : blank.customization,
+        customWebRadios: parsed.customWebRadios ?? [],
         manualOffline: Boolean(parsed.manualOffline),
         isDarkMode: typeof parsed.isDarkMode === 'boolean' ? parsed.isDarkMode : true,
       };
@@ -434,18 +437,41 @@ export default function App() {
 
   const [tracks, setTracks] = useState<MusicTrack[]>(MUSIC_TRACKS);
   const [selectedArtist, setSelectedArtist] = useState<string>('Todos');
+  const [musicSource, setMusicSource] = useState<MusicSourceFilter>('all');
+  const [musicQuery, setMusicQuery] = useState<string>('');
+  const [musicPage, setMusicPage] = useState<number>(1);
+  const [musicHasMore, setMusicHasMore] = useState<boolean>(true);
   const [isSearchingMusic, setIsSearchingMusic] = useState<boolean>(false);
+  const [isLoadingMoreMusic, setIsLoadingMoreMusic] = useState<boolean>(false);
 
   const [radioStations, setRadioStations] = useState<RadioStation[]>(RADIO_STATIONS);
+  const [customWebRadios, setCustomWebRadios] = useState<RadioStation[]>(
+    initial.customWebRadios ?? []
+  );
   const [selectedRadioTag, setSelectedRadioTag] = useState<string>('gospel');
+  const [radioScope, setRadioScope] = useState<'br' | 'global'>('br');
+  const [selectedRadioState, setSelectedRadioState] = useState<string>('');
+  const [radioQuery, setRadioQuery] = useState<string>('');
+  const [radioPage, setRadioPage] = useState<number>(1);
+  const [radioHasMore, setRadioHasMore] = useState<boolean>(true);
   const [isSearchingStations, setIsSearchingStations] = useState<boolean>(false);
+  const [isLoadingMoreRadios, setIsLoadingMoreRadios] = useState<boolean>(false);
+  const [offlineRadioMeta, setOfflineRadioMeta] = useState<{
+    id: string;
+    title: string;
+    subtitle: string;
+  } | null>(null);
 
   const [podcastShows, setPodcastShows] = useState<PodcastShow[]>([]);
   const [selectedPodcastShow, setSelectedPodcastShow] = useState<PodcastShow | null>(null);
   const [podcastEpisodes, setPodcastEpisodes] = useState<PodcastEpisode[]>(PODCAST_EPISODES);
   const [activePodcastEpisode, setActivePodcastEpisode] = useState<PodcastEpisode | null>(null);
   const [selectedPodcastCategory, setSelectedPodcastCategory] = useState<string>('destaques');
+  const [podcastQuery, setPodcastQuery] = useState<string>('');
+  const [podcastPage, setPodcastPage] = useState<number>(1);
+  const [podcastShowsHasMore, setPodcastShowsHasMore] = useState<boolean>(true);
   const [isSearchingPodcasts, setIsSearchingPodcasts] = useState<boolean>(false);
+  const [isLoadingMorePodcastShows, setIsLoadingMorePodcastShows] = useState<boolean>(false);
   const [isLoadingPodcastEpisodes, setIsLoadingPodcastEpisodes] = useState<boolean>(false);
   const [podcastTotalSeconds, setPodcastTotalSeconds] = useState<number>(0);
 
@@ -497,8 +523,21 @@ export default function App() {
     podcastEpisodes.find((ep) => ep.id === activePodcastId) ??
     podcastEpisodes[0] ??
     PODCAST_EPISODES[0];
-  const currentRadio =
-    radioStations.find((s) => s.id === activeRadioId) ?? radioStations[0] ?? RADIO_STATIONS[0];
+  const currentRadio: RadioStation =
+    offlineRadioMeta && activeRadioId === offlineRadioMeta.id
+      ? {
+          id: offlineRadioMeta.id,
+          name: offlineRadioMeta.title,
+          frequency: 'Offline',
+          program: offlineRadioMeta.subtitle,
+          genre: 'Gravação',
+          frequencies: RADIO_STATIONS[0].frequencies,
+        }
+      : customWebRadios.find((s) => s.id === activeRadioId) ??
+        radioStations.find((s) => s.id === activeRadioId) ??
+        radioStations[0] ??
+        customWebRadios[0] ??
+        RADIO_STATIONS[0];
 
   const unreadMessagesCount = threads.reduce((sum, t) => sum + t.unread, 0);
 
@@ -554,7 +593,10 @@ export default function App() {
               youtubeId?: string;
               isRealAudio: boolean;
               isFullTrack: boolean;
+              isDownloadable?: boolean;
+              sourceLabel?: string;
             }>;
+            hasMore?: boolean;
           };
           if (Array.isArray(data.tracks) && data.tracks.length > 0) {
             const loaded: MusicTrack[] = data.tracks.map((t, i) => ({
@@ -563,6 +605,8 @@ export default function App() {
               frequencies: MUSIC_TRACKS[i % MUSIC_TRACKS.length].frequencies,
             }));
             setTracks(loaded);
+            setMusicPage(1);
+            setMusicHasMore(Boolean(data.hasMore ?? true));
           }
         }
 
@@ -580,6 +624,7 @@ export default function App() {
               codec?: string;
               isLiveReal?: boolean;
             }>;
+            hasMore?: boolean;
           };
           if (Array.isArray(data.stations) && data.stations.length > 0) {
             const liveStations: RadioStation[] = data.stations.map((s, idx) => ({
@@ -588,13 +633,20 @@ export default function App() {
             }));
             setRadioStations(liveStations);
             setActiveRadioId(liveStations[0].id);
+            setRadioPage(1);
+            setRadioHasMore(Boolean(data.hasMore ?? liveStations.length >= 20));
           }
         }
 
         if (podcastRes.ok) {
-          const pData = (await podcastRes.json()) as { shows?: PodcastShow[] };
+          const pData = (await podcastRes.json()) as {
+            shows?: PodcastShow[];
+            hasMore?: boolean;
+          };
           if (Array.isArray(pData.shows) && pData.shows.length > 0) {
             setPodcastShows(pData.shows);
+            setPodcastPage(1);
+            setPodcastShowsHasMore(Boolean(pData.hasMore ?? pData.shows.length >= 15));
             const firstShow = pData.shows[0];
             if (firstShow?.feedUrl) {
               const epRes = await fetch(
@@ -703,6 +755,7 @@ export default function App() {
         journalEntries,
         assistantMessages,
         customization,
+        customWebRadios,
         manualOffline,
         isDarkMode,
       };
@@ -779,6 +832,7 @@ export default function App() {
     journalEntries,
     assistantMessages,
     customization,
+    customWebRadios,
     manualOffline,
     isDarkMode,
     cloudSession,
@@ -866,6 +920,9 @@ export default function App() {
             ? remote.customization.homeSectionOrder
             : [...DEFAULT_HOME_SECTION_ORDER],
         });
+      }
+      if (Array.isArray(remote.customWebRadios)) {
+        setCustomWebRadios(remote.customWebRadios);
       }
       if (typeof remote.manualOffline === 'boolean') setManualOffline(remote.manualOffline);
       if (typeof remote.isDarkMode === 'boolean') setIsDarkMode(remote.isDarkMode);
@@ -1137,12 +1194,26 @@ export default function App() {
     setIsPlaying(true);
   };
 
-  const fetchMusicFromServer = async (params: { q?: string; artist?: string }) => {
-    setIsSearchingMusic(true);
+  const fetchMusicFromServer = async (params: {
+    q?: string;
+    artist?: string;
+    source?: MusicSourceFilter;
+    page?: number;
+    append?: boolean;
+  }) => {
+    const page = params.page ?? 1;
+    const activeSource = params.source ?? musicSource;
+    if (params.append) {
+      setIsLoadingMoreMusic(true);
+    } else {
+      setIsSearchingMusic(true);
+    }
     try {
       const qs = new URLSearchParams();
       if (params.q) qs.set('q', params.q);
       if (params.artist && params.artist !== 'Todos') qs.set('artist', params.artist);
+      if (activeSource && activeSource !== 'all') qs.set('source', activeSource);
+      qs.set('page', String(page));
 
       const res = await fetch(`/api/music/search?${qs.toString()}`);
       if (!res.ok) throw new Error('Search failed');
@@ -1158,54 +1229,156 @@ export default function App() {
           youtubeId?: string;
           isRealAudio: boolean;
           isFullTrack: boolean;
+          isDownloadable?: boolean;
+          sourceLabel?: string;
         }>;
+        hasMore?: boolean;
       };
-      if (Array.isArray(data.tracks) && data.tracks.length > 0) {
-        const mapped: MusicTrack[] = data.tracks.map((t, i) => ({
-          ...t,
-          coverUrl: t.coverUrl || STITCH_MUSIC_COVER_URL,
-          frequencies: MUSIC_TRACKS[i % MUSIC_TRACKS.length].frequencies,
-        }));
-        setTracks(mapped);
+      const incoming = Array.isArray(data.tracks)
+        ? data.tracks.map((t, i) => ({
+            ...t,
+            coverUrl: t.coverUrl || STITCH_MUSIC_COVER_URL,
+            frequencies: MUSIC_TRACKS[i % MUSIC_TRACKS.length].frequencies,
+          }))
+        : [];
+
+      if (params.append) {
+        setTracks((prev) => {
+          const seen = new Set(prev.map((t) => t.id));
+          const added = incoming.filter((t) => !seen.has(t.id));
+          showToast(
+            added.length > 0
+              ? `+${added.length} músicas adicionadas à lista.`
+              : 'Todas as faixas desta página já estão na lista.'
+          );
+          return [...prev, ...added];
+        });
+      } else if (incoming.length > 0) {
+        setTracks(incoming);
         setTrackIndex(0);
         setPlaybackProgress(0);
-        showToast(`${mapped.length} músicas completas carregadas.`);
+        showToast(`${incoming.length} músicas carregadas (YouTube e outros catálogos).`);
       } else {
         setTracks([]);
         showToast('Nenhuma música encontrada para esta busca.');
       }
+      setMusicPage(page);
+      setMusicHasMore(Boolean(data.hasMore) && incoming.length > 0);
     } catch {
-      showToast('Erro ao buscar músicas online.');
+      showToast(
+        isOffline
+          ? 'Sem conexão: use a aba Baixadas Offline ou músicas em cache.'
+          : 'Erro ao buscar músicas online.'
+      );
     } finally {
       setIsSearchingMusic(false);
+      setIsLoadingMoreMusic(false);
     }
   };
 
   const handleSelectArtist = (artist: string) => {
     setSelectedArtist(artist);
+    setMusicQuery('');
+    setMusicPage(1);
     if (artist === 'Todos') {
-      void fetchMusicFromServer({ q: 'Louvor Gospel Brasil' });
+      void fetchMusicFromServer({ q: 'Louvor Gospel Brasil', source: musicSource, page: 1 });
     } else {
-      void fetchMusicFromServer({ artist });
+      void fetchMusicFromServer({ artist, source: musicSource, page: 1 });
     }
+  };
+
+  const handleSelectMusicSource = (nextSource: MusicSourceFilter) => {
+    setMusicSource(nextSource);
+    setMusicPage(1);
+    void fetchMusicFromServer({
+      q: musicQuery || (selectedArtist === 'Todos' ? 'Louvor Gospel Brasil' : undefined),
+      artist: selectedArtist !== 'Todos' ? selectedArtist : undefined,
+      source: nextSource,
+      page: 1,
+    });
   };
 
   const handleSearchMusic = (query: string) => {
     const trimmed = query.trim();
+    setMusicQuery(trimmed);
+    setMusicPage(1);
     if (!trimmed) {
       handleSelectArtist(selectedArtist);
       return;
     }
+    if (/youtube\.com|youtu\.be/i.test(trimmed)) {
+      setIsSearchingMusic(true);
+      void fetch(`/api/youtube/video?urlOrId=${encodeURIComponent(trimmed)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: { video?: YouTubeVideoItem } | null) => {
+          if (data?.video?.videoId) {
+            const ytTrack: MusicTrack = {
+              id: `yt-${data.video.videoId}`,
+              title: data.video.title,
+              artist: data.video.channel || 'YouTube',
+              album: 'YouTube · Link Direto',
+              durationSeconds: 240,
+              coverUrl: data.video.thumbnailUrl,
+              youtubeId: data.video.videoId,
+              isRealAudio: true,
+              isFullTrack: true,
+              isDownloadable: false,
+              sourceLabel: 'YouTube',
+              frequencies: MUSIC_TRACKS[0].frequencies,
+            };
+            handlePlayExternalTrack(ytTrack);
+            showToast(`Tocando do YouTube: ${ytTrack.title}`);
+          } else {
+            setSelectedArtist('Todos');
+            void fetchMusicFromServer({ q: trimmed, source: musicSource, page: 1 });
+          }
+        })
+        .catch(() => {
+          setSelectedArtist('Todos');
+          void fetchMusicFromServer({ q: trimmed, source: musicSource, page: 1 });
+        })
+        .finally(() => setIsSearchingMusic(false));
+      return;
+    }
     setSelectedArtist('Todos');
-    void fetchMusicFromServer({ q: trimmed });
+    void fetchMusicFromServer({ q: trimmed, source: musicSource, page: 1 });
   };
 
-  const fetchStationsFromServer = async (params: { q?: string; tag?: string }) => {
-    setIsSearchingStations(true);
+  const handleLoadMoreMusic = () => {
+    void fetchMusicFromServer({
+      q:
+        musicQuery ||
+        (selectedArtist === 'Todos' ? 'Louvor Gospel Brasil' : undefined),
+      artist: selectedArtist !== 'Todos' ? selectedArtist : undefined,
+      source: musicSource,
+      page: musicPage + 1,
+      append: true,
+    });
+  };
+
+  const fetchStationsFromServer = async (params: {
+    q?: string;
+    tag?: string;
+    scope?: 'br' | 'global';
+    state?: string;
+    page?: number;
+    append?: boolean;
+  }) => {
+    const page = params.page ?? 1;
+    const scope = params.scope ?? radioScope;
+    const activeState = params.state !== undefined ? params.state : selectedRadioState;
+    if (params.append) {
+      setIsLoadingMoreRadios(true);
+    } else {
+      setIsSearchingStations(true);
+    }
     try {
       const qs = new URLSearchParams();
       if (params.q) qs.set('q', params.q);
       if (params.tag) qs.set('tag', params.tag);
+      if (activeState) qs.set('state', activeState);
+      qs.set('scope', scope);
+      qs.set('page', String(page));
 
       const res = await fetch(`/api/radio/search?${qs.toString()}`);
       if (!res.ok) throw new Error('Radio search failed');
@@ -1221,38 +1394,116 @@ export default function App() {
           bitrate?: number;
           codec?: string;
           isLiveReal?: boolean;
+          isWebRadio?: boolean;
         }>;
+        hasMore?: boolean;
       };
       if (Array.isArray(data.stations)) {
         const mapped: RadioStation[] = data.stations.map((s, idx) => ({
           ...s,
           frequencies: RADIO_STATIONS[idx % RADIO_STATIONS.length].frequencies,
         }));
-        setRadioStations(mapped);
-        if (mapped.length > 0 && !mapped.some((m) => m.id === activeRadioId)) {
-          setActiveRadioId(mapped[0].id);
+        if (params.append) {
+          setRadioStations((prev) => {
+            const seen = new Set(prev.map((s) => s.id));
+            const added = mapped.filter((s) => !seen.has(s.id));
+            showToast(`+${added.length} estações adicionadas.`);
+            return [...prev, ...added];
+          });
+        } else {
+          setRadioStations(mapped);
+          if (mapped.length > 0 && !mapped.some((m) => m.id === activeRadioId)) {
+            setActiveRadioId(mapped[0].id);
+          }
+          showToast(
+            activeState
+              ? `${mapped.length} estações encontradas (${activeState}).`
+              : `${mapped.length} estações encontradas.`
+          );
         }
-        showToast(`${mapped.length} estações encontradas.`);
+        setRadioPage(page);
+        setRadioHasMore(Boolean(data.hasMore) && mapped.length > 0);
       }
     } catch {
-      showToast('Não foi possível consultar estações online agora.');
+      showToast(
+        isOffline
+          ? 'Sem conexão: ouça suas gravações salvas em Gravações Offline.'
+          : 'Não foi possível consultar estações online agora.'
+      );
     } finally {
       setIsSearchingStations(false);
+      setIsLoadingMoreRadios(false);
     }
   };
 
   const handleSelectRadioTag = (tag: string) => {
     setSelectedRadioTag(tag);
-    void fetchStationsFromServer({ tag });
+    setRadioQuery('');
+    setRadioPage(1);
+    void fetchStationsFromServer({
+      tag,
+      scope: radioScope,
+      state: selectedRadioState,
+      page: 1,
+    });
+  };
+
+  const handleChangeRadioScope = (nextScope: 'br' | 'global') => {
+    setRadioScope(nextScope);
+    setSelectedRadioState('');
+    setRadioPage(1);
+    void fetchStationsFromServer({
+      q: radioQuery || undefined,
+      tag: radioQuery ? 'todas' : selectedRadioTag,
+      scope: nextScope,
+      state: '',
+      page: 1,
+    });
+  };
+
+  const handleSelectRadioState = (nextState: string) => {
+    setSelectedRadioState(nextState);
+    setRadioPage(1);
+    void fetchStationsFromServer({
+      q: radioQuery || undefined,
+      tag: radioQuery ? 'todas' : selectedRadioTag,
+      scope: radioScope,
+      state: nextState,
+      page: 1,
+    });
   };
 
   const handleSearchStations = (query: string) => {
     const trimmed = query.trim();
+    setRadioQuery(trimmed);
+    setRadioPage(1);
     if (!trimmed) {
-      void fetchStationsFromServer({ tag: selectedRadioTag });
+      void fetchStationsFromServer({
+        tag: selectedRadioTag,
+        scope: radioScope,
+        state: selectedRadioState,
+        page: 1,
+      });
       return;
     }
-    void fetchStationsFromServer({ q: trimmed, tag: 'todas' });
+    void fetchStationsFromServer({
+      q: trimmed,
+      tag: 'todas',
+      scope: radioScope,
+      state: selectedRadioState,
+      page: 1,
+    });
+  };
+
+  const handleLoadMoreRadios = () => {
+    void fetchStationsFromServer({
+      q: radioQuery || undefined,
+      tag: radioQuery ? 'todas' : selectedRadioTag,
+      scope: radioScope,
+      state: selectedRadioState,
+      page: radioPage + 1,
+      append: true,
+    });
   };
 
   const handleToggleMusicPlay = () => {
@@ -1297,6 +1548,18 @@ export default function App() {
     }
   };
 
+  const handlePlayExternalTrack = (track: MusicTrack) => {
+    const existingIdx = tracks.findIndex((t) => t.id === track.id);
+    if (existingIdx >= 0) {
+      handleSelectTrack(track.id);
+      return;
+    }
+    const nextList = [track, ...tracks];
+    setTracks(nextList);
+    setTrackIndex(0);
+    playMusicTrack(track, nextList);
+  };
+
   const handleAddLocalTrack = (file: File) => {
     const objectUrl = URL.createObjectURL(file);
     const cleanTitle = file.name.replace(/\.[^/.]+$/, '') || 'Música Local';
@@ -1310,6 +1573,7 @@ export default function App() {
       audioUrl: objectUrl,
       isRealAudio: true,
       isFullTrack: true,
+      isDownloadable: true,
     };
 
     const probe = new Audio(objectUrl);
@@ -1332,41 +1596,84 @@ export default function App() {
     showToast(`"${cleanTitle}" adicionada e em reprodução.`);
   };
 
-  const fetchPodcastShowsFromServer = async (params: { q?: string; category?: string }) => {
-    setIsSearchingPodcasts(true);
+  const fetchPodcastShowsFromServer = async (params: {
+    q?: string;
+    category?: string;
+    page?: number;
+    append?: boolean;
+  }) => {
+    const page = params.page ?? 1;
+    if (params.append) {
+      setIsLoadingMorePodcastShows(true);
+    } else {
+      setIsSearchingPodcasts(true);
+    }
     try {
       const qs = new URLSearchParams();
       if (params.q) qs.set('q', params.q);
       if (params.category) qs.set('category', params.category);
+      qs.set('page', String(page));
 
       const res = await fetch(`/api/podcast/search?${qs.toString()}`);
       if (!res.ok) throw new Error('Podcast search failed');
-      const data = (await res.json()) as { shows?: PodcastShow[] };
+      const data = (await res.json()) as {
+        shows?: PodcastShow[];
+        hasMore?: boolean;
+      };
       if (Array.isArray(data.shows)) {
-        setPodcastShows(data.shows);
-        showToast(`${data.shows.length} podcasts reais encontrados.`);
+        if (params.append) {
+          setPodcastShows((prev) => {
+            const seen = new Set(prev.map((s) => s.id));
+            const added = data.shows!.filter((s) => !seen.has(s.id));
+            showToast(`+${added.length} programas carregados.`);
+            return [...prev, ...added];
+          });
+        } else {
+          setPodcastShows(data.shows);
+          showToast(`${data.shows.length} podcasts reais encontrados.`);
+        }
+        setPodcastPage(page);
+        setPodcastShowsHasMore(Boolean(data.hasMore) && data.shows.length > 0);
       }
     } catch {
-      showToast('Não foi possível consultar o catálogo de podcasts agora.');
+      showToast(
+        isOffline
+          ? 'Sem conexão: abra a aba Baixados Offline para ouvir podcasts salvos.'
+          : 'Não foi possível consultar o catálogo de podcasts agora.'
+      );
     } finally {
       setIsSearchingPodcasts(false);
+      setIsLoadingMorePodcastShows(false);
     }
   };
 
   const handleSelectPodcastCategory = (categoryId: string) => {
     setSelectedPodcastCategory(categoryId);
+    setPodcastQuery('');
+    setPodcastPage(1);
     setSelectedPodcastShow(null);
-    void fetchPodcastShowsFromServer({ category: categoryId });
+    void fetchPodcastShowsFromServer({ category: categoryId, page: 1 });
   };
 
   const handleSearchPodcasts = (query: string) => {
     const trimmed = query.trim();
+    setPodcastQuery(trimmed);
+    setPodcastPage(1);
     setSelectedPodcastShow(null);
     if (!trimmed) {
-      void fetchPodcastShowsFromServer({ category: selectedPodcastCategory });
+      void fetchPodcastShowsFromServer({ category: selectedPodcastCategory, page: 1 });
       return;
     }
-    void fetchPodcastShowsFromServer({ q: trimmed });
+    void fetchPodcastShowsFromServer({ q: trimmed, page: 1 });
+  };
+
+  const handleLoadMorePodcastShows = () => {
+    void fetchPodcastShowsFromServer({
+      q: podcastQuery || undefined,
+      category: podcastQuery ? undefined : selectedPodcastCategory,
+      page: podcastPage + 1,
+      append: true,
+    });
   };
 
   const handleOpenPodcastShow = async (show: PodcastShow) => {
@@ -1467,6 +1774,7 @@ export default function App() {
   };
 
   const handleToggleRadioStation = (station: RadioStation) => {
+    setOfflineRadioMeta(null);
     if (audioMode === 'radio' && activeRadioId === station.id && isPlaying) {
       ambientAudio.stop();
       setIsPlaying(false);
@@ -1495,6 +1803,64 @@ export default function App() {
       setIsPlaying(true);
       showToast(`Sintonizando ${station.name}...`);
     }
+  };
+
+  const handlePlayOfflineRadioRecording = (
+    recordingId: string,
+    title: string,
+    subtitle: string
+  ) => {
+    if (audioMode === 'radio' && activeRadioId === recordingId && isPlaying) {
+      ambientAudio.stop();
+      setIsPlaying(false);
+      return;
+    }
+    setOfflineRadioMeta({ id: recordingId, title, subtitle });
+    setAudioMode('radio');
+    setActiveRadioId(recordingId);
+    setRadioElapsedSeconds(0);
+    setHasActivePlayer(true);
+    setRadioStreamStatus('live');
+    ambientAudio.start({
+      id: recordingId,
+      kind: 'radio',
+      frequencies: RADIO_STATIONS[0].frequencies,
+      audioUrl: 'offline-blob',
+      onEnded: () => setIsPlaying(false),
+    });
+    setIsPlaying(true);
+    showToast(`Reproduzindo gravação offline: ${title}`);
+  };
+
+  const handleAddCustomWebRadio = (input: {
+    name: string;
+    streamUrl: string;
+    genre?: string;
+  }) => {
+    const station: RadioStation = {
+      id: `webradio-${Date.now()}`,
+      name: input.name,
+      frequency: 'Rádio Web',
+      program: 'Minha Rádio Web · Ao vivo',
+      genre: input.genre || 'Rádio Web',
+      frequencies: RADIO_STATIONS[0].frequencies,
+      streamUrl: input.streamUrl,
+      isLiveReal: true,
+      isWebRadio: true,
+      isCustom: true,
+    };
+    setCustomWebRadios((prev) => [station, ...prev]);
+    handleToggleRadioStation(station);
+    showToast(`Rádio Web "${station.name}" salva e sintonizada!`);
+  };
+
+  const handleDeleteCustomWebRadio = (stationId: string) => {
+    setCustomWebRadios((prev) => prev.filter((s) => s.id !== stationId));
+    if (activeRadioId === stationId && audioMode === 'radio' && isPlaying) {
+      ambientAudio.stop();
+      setIsPlaying(false);
+    }
+    showToast('Rádio Web removida da sua lista.');
   };
 
   const handleToggleMiniPlayer = () => {
@@ -1613,7 +1979,9 @@ export default function App() {
         handleNavigate('podcast');
       }
     } else if (item.kind === 'radio') {
-      const found = radioStations.find((r) => r.id === item.itemId);
+      const found =
+        customWebRadios.find((r) => r.id === item.itemId) ||
+        radioStations.find((r) => r.id === item.itemId);
       if (found) {
         handleToggleRadioStation(found);
       } else {
@@ -1713,6 +2081,10 @@ export default function App() {
 
   const handleAddPhoto = (photo: Omit<PhotoItem, 'id'>) => {
     setPhotos((prev) => [{ ...photo, id: `pho-${Date.now()}` }, ...prev]);
+  };
+
+  const handleDeletePhoto = (id: string) => {
+    setPhotos((prev) => prev.filter((p) => p.id !== id));
   };
 
   const handleSendMessage = (threadId: string, text: string) => {
@@ -2887,7 +3259,8 @@ export default function App() {
             personalDevotionals={personalDevotionals}
             tracks={tracks}
             podcasts={podcastEpisodes}
-            stations={radioStations}
+            stations={[...customWebRadios, ...radioStations]}
+            photos={photos}
             youtubeVideos={ytVideos}
             agenda={agenda}
             contacts={contacts}
@@ -2931,7 +3304,7 @@ export default function App() {
             devotionals={DEVOTIONALS}
             tracks={tracks}
             podcasts={podcastEpisodes}
-            stations={radioStations}
+            stations={[...customWebRadios, ...radioStations]}
             favoriteDevotionalIds={favoriteDevotionalIds}
             favoriteTrackIds={favoriteTrackIds}
             favoritePodcastIds={favoritePodcastIds}
@@ -3117,14 +3490,18 @@ export default function App() {
             selectedCategory={selectedPodcastCategory}
             isSearchingShows={isSearchingPodcasts}
             isLoadingEpisodes={isLoadingPodcastEpisodes}
+            hasMoreShows={podcastShowsHasMore}
+            isLoadingMoreShows={isLoadingMorePodcastShows}
             favoritePodcastIds={favoritePodcastIds}
             onToggleFavoritePodcast={handleToggleFavoritePodcast}
             onSelectCategory={handleSelectPodcastCategory}
             onSearchPodcasts={handleSearchPodcasts}
+            onLoadMoreShows={handleLoadMorePodcastShows}
             onOpenShow={(show) => void handleOpenPodcastShow(show)}
             onCloseShow={() => setSelectedPodcastShow(null)}
             onToggleEpisode={handleTogglePodcastEpisode}
             onSeekPodcast={handleSeekPodcast}
+            onShowToast={showToast}
             onBack={handleBackFromSubView}
           />
         )}
@@ -3136,17 +3513,24 @@ export default function App() {
             isPlaying={isMusicPlaying}
             playbackProgress={playbackProgress}
             selectedArtist={selectedArtist}
+            selectedSource={musicSource}
             isSearching={isSearchingMusic}
+            hasMore={musicHasMore}
+            isLoadingMore={isLoadingMoreMusic}
             favoriteTrackIds={favoriteTrackIds}
             onSelectArtist={handleSelectArtist}
+            onSelectSource={handleSelectMusicSource}
             onSearchMusic={handleSearchMusic}
+            onLoadMore={handleLoadMoreMusic}
             onSelectTrack={handleSelectTrack}
+            onPlayExternalTrack={handlePlayExternalTrack}
             onTogglePlay={handleToggleMusicPlay}
             onNextTrack={handleNextTrack}
             onPrevTrack={handlePrevTrack}
             onSeek={handleSeekTrack}
             onAddLocalTrack={handleAddLocalTrack}
             onToggleFavoriteTrack={handleToggleFavoriteTrack}
+            onShowToast={showToast}
             onBack={handleBackFromSubView}
             showMiniPip={showMiniPip}
             onToggleVideoPip={() => setShowMiniPip((p) => !p)}
@@ -3157,6 +3541,7 @@ export default function App() {
           <PhotosView
             photos={photos}
             onAddPhoto={handleAddPhoto}
+            onDeletePhoto={handleDeletePhoto}
             onBack={handleBackFromSubView}
             onShowToast={showToast}
           />
@@ -3196,17 +3581,29 @@ export default function App() {
         {activeTab === 'radio' && (
           <RadioView
             stations={radioStations}
+            customWebRadios={customWebRadios}
             activeStationId={activeRadioId}
             isPlaying={isRadioPlaying}
             radioStreamStatus={radioStreamStatus}
             radioElapsedSeconds={radioElapsedSeconds}
             selectedRadioTag={selectedRadioTag}
+            radioScope={radioScope}
+            selectedRadioState={selectedRadioState}
             isSearchingStations={isSearchingStations}
+            hasMoreStations={radioHasMore}
+            isLoadingMoreStations={isLoadingMoreRadios}
             favoriteRadioIds={favoriteRadioIds}
             onToggleFavoriteRadio={handleToggleFavoriteRadio}
             onSelectRadioTag={handleSelectRadioTag}
+            onChangeRadioScope={handleChangeRadioScope}
+            onSelectRadioState={handleSelectRadioState}
             onSearchStations={handleSearchStations}
+            onLoadMoreStations={handleLoadMoreRadios}
             onToggleStation={handleToggleRadioStation}
+            onAddCustomWebRadio={handleAddCustomWebRadio}
+            onDeleteCustomWebRadio={handleDeleteCustomWebRadio}
+            onPlayOfflineRecording={handlePlayOfflineRadioRecording}
+            onShowToast={showToast}
             onBack={handleBackFromSubView}
           />
         )}

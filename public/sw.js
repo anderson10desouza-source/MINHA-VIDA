@@ -1,4 +1,4 @@
-const CACHE_NAME = 'meu-mundo-offline-v3';
+const CACHE_NAME = 'meu-mundo-offline-v4';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/pwa-192x192.png'];
 
 self.addEventListener('install', (event) => {
@@ -29,10 +29,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Never cache live audio streams or private Supabase auth/state endpoints
+  // Never cache live audio streams, large media proxy downloads, or private Supabase endpoints in SW Cache
   if (
     url.pathname.startsWith('/api/radio/stream') ||
     url.pathname.startsWith('/api/podcast/audio') ||
+    url.pathname.startsWith('/api/media/proxy') ||
     url.pathname.startsWith('/api/supabase/')
   ) {
     return;

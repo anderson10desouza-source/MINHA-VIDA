@@ -81,6 +81,8 @@ export interface MusicTrack {
   youtubeId?: string;
   isRealAudio?: boolean;
   isFullTrack?: boolean;
+  isDownloadable?: boolean;
+  sourceLabel?: string;
 }
 
 export interface PersonalDevotional {
@@ -156,6 +158,8 @@ export interface RadioStation {
   bitrate?: number;
   codec?: string;
   isLiveReal?: boolean;
+  isWebRadio?: boolean;
+  isCustom?: boolean;
 }
 
 export interface TaskItem {
@@ -304,6 +308,7 @@ export interface BookSearchResult {
   coverUrl: string;
   subject: string;
   openLibraryKey?: string;
+  textUrl?: string;
 }
 
 export type FinanceEntryType = 'gasto' | 'receita';
@@ -620,6 +625,34 @@ export interface AppCustomizationState {
   visibleHomeSections: Record<HomeSectionId, boolean>;
   homeSectionOrder: HomeSectionId[];
 }
+
+export interface ImageSearchResult {
+  id: string;
+  title: string;
+  author: string;
+  thumbUrl: string;
+  fullUrl: string;
+  width?: number;
+  height?: number;
+  source: string;
+}
+
+export type OfflineMediaKind = 'music' | 'podcast' | 'radio' | 'image' | 'book';
+
+export interface OfflineMediaRecord {
+  key: string;
+  kind: OfflineMediaKind;
+  itemId: string;
+  title: string;
+  subtitle: string;
+  coverUrl?: string;
+  mimeType: string;
+  sizeBytes: number;
+  downloadedAt: string;
+  hasBlob: boolean;
+  extraJson?: string;
+}
+
 
 
 

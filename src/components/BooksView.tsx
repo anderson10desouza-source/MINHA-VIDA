@@ -5,7 +5,20 @@ import {
   BookItem,
   BookSearchResult,
   BookStatus,
+  OfflineMediaRecord,
 } from '../types';
+import {
+  buildOfflineKey,
+  deleteOfflineMedia,
+  downloadMediaFileToDevice,
+  getOfflineMediaBlobUrl,
+  listOfflineRecords,
+  sanitizeFilename,
+  saveOfflineMediaBlob,
+  saveOfflineMediaFromUrl,
+  subscribeOfflineMedia,
+  triggerBrowserDownloadBlob,
+} from '../utils/offlineMediaStore';
 import { ResilientImage } from './ResilientImage';
 
 interface BooksViewProps {
@@ -111,7 +124,7 @@ export const BooksView: React.FC<BooksViewProps> = ({
   onShowToast,
 }) => {
   const [subTab, setSubTab] = useState<'estante' | 'buscar' | 'audiolivros'>('estante');
-  const [statusFilter, setStatusFilter] = useState<'Todos' | BookStatus>('Todos');
+  const [statusFilter, setStatusFilter] = useState<'Todos' | 'Offline' | BookStatus>('Todos');
   const [shelfQuery, setShelfQuery] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
 
@@ -128,20 +141,32 @@ export const BooksView: React.FC<BooksViewProps> = ({
   const [openNotesId, setOpenNotesId] = useState<string | null>(null);
   const [draftNotes, setDraftNotes] = useState('');
 
-  // Open Library written books search state
+  // Open Library + Gutendex written books search state (unlimited pagination)
   const [onlineQuery, setOnlineQuery] = useState('');
   const [onlineCategory, setOnlineCategory] = useState('destaques');
   const [onlineResults, setOnlineResults] = useState<BookSearchResult[]>([]);
+  const [onlinePage, setOnlinePage] = useState(1);
+  const [onlineHasMore, setOnlineHasMore] = useState(false);
   const [isSearchingOnline, setIsSearchingOnline] = useState(false);
+  const [isLoadingMoreOnline, setIsLoadingMoreOnline] = useState(false);
   const [hasSearchedOnline, setHasSearchedOnline] = useState(false);
   const [loadingWrittenBookId, setLoadingWrittenBookId] = useState<string | null>(null);
 
-  // Real Audiobooks (LibriVox / Internet Archive) state
+  // Real Audiobooks (LibriVox / Internet Archive) state (unlimited pagination)
   const [audiobookQuery, setAudiobookQuery] = useState('');
   const [audiobookResults, setAudiobookResults] = useState<AudiobookSearchResult[]>([]);
+  const [audiobookPage, setAudiobookPage] = useState(1);
+  const [audiobookHasMore, setAudiobookHasMore] = useState(false);
   const [isSearchingAudiobooks, setIsSearchingAudiobooks] = useState(false);
+  const [isLoadingMoreAudiobooks, setIsLoadingMoreAudiobooks] = useState(false);
   const [hasSearchedAudiobooks, setHasSearchedAudiobooks] = useState(false);
   const [loadingAudiobookId, setLoadingAudiobookId] = useState<string | null>(null);
+
+  // Offline books & chapter MP3 tracking
+  const [offlineRecords, setOfflineRecords] = useState<OfflineMediaRecord[]>([]);
+  const [offlineDownloadingBookId, setOfflineDownloadingBookId] = useState<string | null>(null);
+  const [offlineDownloadProgress, setOfflineDownloadProgress] = useState('');
+  const [resolvedMp3Src, setResolvedMp3Src] = useState('');
 
   // Integrated Book Reader (Written + Audio)
   const [readerBookId, setReaderBookId] = useState<string | null>(null);
@@ -200,10 +225,40 @@ export const BooksView: React.FC<BooksViewProps> = ({
     return { total: books.length, reading, completed, totalPagesRead };
   }, [books]);
 
+  const offlineKeys = useMemo(
+    () => new Set(offlineRecords.map((r) => r.key)),
+    [offlineRecords]
+  );
+
+  useEffect(() => {
+    let active = true;
+    const loadOffline = async () => {
+      const list = await listOfflineRecords('book');
+      if (active) setOfflineRecords(list);
+    };
+    void loadOffline();
+    const unsub = subscribeOfflineMedia(() => {
+      void loadOffline();
+    });
+    return () => {
+      active = false;
+      unsub();
+    };
+  }, []);
+
   const filteredShelf = useMemo(() => {
     const q = shelfQuery.trim().toLowerCase();
     return books.filter((b) => {
-      const matchStatus = statusFilter === 'Todos' || b.status === statusFilter;
+      const isBookOffline =
+        offlineKeys.has(buildOfflineKey('book', b.id)) ||
+        Boolean(b.audioDataUrl) ||
+        (!isPlaceholderBookText(b.contentText) && Boolean(b.contentText));
+      const matchStatus =
+        statusFilter === 'Todos'
+          ? true
+          : statusFilter === 'Offline'
+            ? isBookOffline
+            : b.status === statusFilter;
       const matchQuery =
         !q ||
         b.title.toLowerCase().includes(q) ||
@@ -211,7 +266,34 @@ export const BooksView: React.FC<BooksViewProps> = ({
         b.category.toLowerCase().includes(q);
       return matchStatus && matchQuery;
     });
-  }, [books, statusFilter, shelfQuery]);
+  }, [books, statusFilter, shelfQuery, offlineKeys]);
+
+  const activeReaderMp3Track =
+    readerBook && readerBook.audioTracks && readerBook.audioTracks.length > 0
+      ? readerBook.audioTracks[activeMp3Idx % readerBook.audioTracks.length]
+      : null;
+
+  useEffect(() => {
+    let active = true;
+    if (!activeReaderMp3Track) {
+      setResolvedMp3Src('');
+      return;
+    }
+    const fallbackUrl = `/api/podcast/audio?url=${encodeURIComponent(
+      activeReaderMp3Track.audioUrl
+    )}`;
+    setResolvedMp3Src(fallbackUrl);
+    void getOfflineMediaBlobUrl(buildOfflineKey('book', activeReaderMp3Track.id)).then(
+      (localUrl) => {
+        if (active && localUrl) {
+          setResolvedMp3Src(localUrl);
+        }
+      }
+    );
+    return () => {
+      active = false;
+    };
+  }, [activeReaderMp3Track]);
 
   // Load available SpeechSynthesis voices
   useEffect(() => {
@@ -356,7 +438,8 @@ export const BooksView: React.FC<BooksViewProps> = ({
   const fetchRealWrittenText = async (
     bookTitle: string,
     bookAuthor: string,
-    openLibraryKey?: string
+    openLibraryKey?: string,
+    textUrl?: string
   ): Promise<{ contentText: string; sourceLabel: string }> => {
     try {
       const qs = new URLSearchParams({
@@ -364,6 +447,7 @@ export const BooksView: React.FC<BooksViewProps> = ({
         author: bookAuthor,
       });
       if (openLibraryKey) qs.set('openLibraryKey', openLibraryKey);
+      if (textUrl) qs.set('textUrl', textUrl);
       const res = await fetch(`/api/books/read-text?${qs.toString()}`);
       if (!res.ok) return { contentText: '', sourceLabel: '' };
       const data = (await res.json()) as {
@@ -615,40 +699,172 @@ export const BooksView: React.FC<BooksViewProps> = ({
     setIsPausedRecording(false);
   };
 
-  const fetchOnlineBooks = async (params: { q?: string; category?: string }) => {
-    setIsSearchingOnline(true);
+  const fetchOnlineBooks = async (params: {
+    q?: string;
+    category?: string;
+    page?: number;
+    append?: boolean;
+  }) => {
+    const page = params.page ?? 1;
+    if (params.append) {
+      setIsLoadingMoreOnline(true);
+    } else {
+      setIsSearchingOnline(true);
+    }
     setHasSearchedOnline(true);
     try {
       const qs = new URLSearchParams();
       if (params.q) qs.set('q', params.q);
       if (params.category) qs.set('category', params.category);
+      qs.set('page', String(page));
 
       const res = await fetch(`/api/books/search?${qs.toString()}`);
       if (!res.ok) throw new Error('Book search failed');
-      const data = (await res.json()) as { books?: BookSearchResult[] };
-      setOnlineResults(Array.isArray(data.books) ? data.books : []);
+      const data = (await res.json()) as {
+        books?: BookSearchResult[];
+        hasMore?: boolean;
+      };
+      const incoming = Array.isArray(data.books) ? data.books : [];
+      if (params.append) {
+        setOnlineResults((prev) => {
+          const seen = new Set(prev.map((b) => b.title.toLowerCase()));
+          return [
+            ...prev,
+            ...incoming.filter((b) => !seen.has(b.title.toLowerCase())),
+          ];
+        });
+      } else {
+        setOnlineResults(incoming);
+      }
+      setOnlinePage(page);
+      setOnlineHasMore(Boolean(data.hasMore) && incoming.length > 0);
     } catch {
       onShowToast('Não foi possível consultar o catálogo de livros agora.');
     } finally {
       setIsSearchingOnline(false);
+      setIsLoadingMoreOnline(false);
     }
   };
 
-  const fetchAudiobooks = async (query?: string) => {
-    setIsSearchingAudiobooks(true);
+  const fetchAudiobooks = async (
+    query?: string,
+    page = 1,
+    append = false
+  ) => {
+    if (append) {
+      setIsLoadingMoreAudiobooks(true);
+    } else {
+      setIsSearchingAudiobooks(true);
+    }
     setHasSearchedAudiobooks(true);
     try {
       const qs = new URLSearchParams();
       if (query) qs.set('q', query);
+      qs.set('page', String(page));
       const res = await fetch(`/api/books/audiobooks?${qs.toString()}`);
       if (!res.ok) throw new Error('Audiobook search failed');
-      const data = (await res.json()) as { audiobooks?: AudiobookSearchResult[] };
-      setAudiobookResults(Array.isArray(data.audiobooks) ? data.audiobooks : []);
+      const data = (await res.json()) as {
+        audiobooks?: AudiobookSearchResult[];
+        hasMore?: boolean;
+      };
+      const incoming = Array.isArray(data.audiobooks) ? data.audiobooks : [];
+      if (append) {
+        setAudiobookResults((prev) => {
+          const seen = new Set(prev.map((a) => a.identifier));
+          return [...prev, ...incoming.filter((a) => !seen.has(a.identifier))];
+        });
+      } else {
+        setAudiobookResults(incoming);
+      }
+      setAudiobookPage(page);
+      setAudiobookHasMore(Boolean(data.hasMore) && incoming.length > 0);
     } catch {
       onShowToast('Não foi possível consultar audiolivros online agora.');
     } finally {
       setIsSearchingAudiobooks(false);
+      setIsLoadingMoreAudiobooks(false);
     }
+  };
+
+  const handleDownloadBookOffline = async (book: BookItem) => {
+    const bookKey = buildOfflineKey('book', book.id);
+    if (offlineKeys.has(bookKey)) {
+      await deleteOfflineMedia(bookKey);
+      if (book.audioTracks) {
+        await Promise.all(
+          book.audioTracks.map((tr) =>
+            deleteOfflineMedia(buildOfflineKey('book', tr.id))
+          )
+        );
+      }
+      onShowToast(`Arquivos offline de "${book.title}" removidos.`);
+      return;
+    }
+
+    setOfflineDownloadingBookId(book.id);
+    try {
+      let contentToSave = book.contentText || '';
+      if (isPlaceholderBookText(contentToSave)) {
+        setOfflineDownloadProgress('Buscando texto completo...');
+        const fetched = await fetchRealWrittenText(book.title, book.author);
+        if (fetched.contentText) {
+          contentToSave = fetched.contentText;
+          onUpdateBook(book.id, { contentText: fetched.contentText });
+        }
+      }
+
+      if (book.audioTracks && book.audioTracks.length > 0) {
+        const total = book.audioTracks.length;
+        for (let i = 0; i < total; i++) {
+          const tr = book.audioTracks[i];
+          setOfflineDownloadProgress(`Baixando áudio ${i + 1}/${total}...`);
+          try {
+            await saveOfflineMediaFromUrl({
+              key: buildOfflineKey('book', tr.id),
+              kind: 'book',
+              itemId: tr.id,
+              title: `${book.title} · ${tr.title}`,
+              subtitle: book.author,
+              url: `/api/podcast/audio?url=${encodeURIComponent(tr.audioUrl)}`,
+              coverUrl: book.coverUrl,
+            });
+          } catch {
+            // Skip failed chapter and continue saving remaining chapters
+          }
+        }
+      }
+
+      const txtBody =
+        contentToSave ||
+        `# ${book.title}\nAutor: ${book.author}\n\n${book.notes || 'Salvo para leitura offline.'}`;
+      const txtBlob = new Blob([txtBody], { type: 'text/plain;charset=utf-8' });
+      await saveOfflineMediaBlob({
+        key: bookKey,
+        kind: 'book',
+        itemId: book.id,
+        title: book.title,
+        subtitle: `${book.author}${book.audioTracks?.length ? ` · ${book.audioTracks.length} MP3s` : ''}`,
+        blob: txtBlob,
+        coverUrl: book.coverUrl,
+      });
+
+      onShowToast(`"${book.title}" salvo completo para ler e ouvir offline!`);
+    } catch {
+      onShowToast('Erro ao baixar este livro para modo offline.');
+    } finally {
+      setOfflineDownloadingBookId(null);
+      setOfflineDownloadProgress('');
+    }
+  };
+
+  const handleDownloadBookTxt = (book: BookItem) => {
+    const content =
+      book.contentText && !isPlaceholderBookText(book.contentText)
+        ? book.contentText
+        : `${book.title} - ${book.author}\n\n${book.notes || ''}`;
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    triggerBrowserDownloadBlob(blob, sanitizeFilename(book.title, 'txt'));
+    onShowToast(`Baixando "${book.title}.txt" para o dispositivo.`);
   };
 
   const handleSaveAndOpenAudiobook = async (ab: AudiobookSearchResult) => {
@@ -815,7 +1031,8 @@ export const BooksView: React.FC<BooksViewProps> = ({
       const { contentText, sourceLabel } = await fetchRealWrittenText(
         book.title,
         book.author,
-        book.openLibraryKey
+        book.openLibraryKey,
+        book.textUrl
       );
 
       const fallbackText = `# ${book.title}\nAutor: ${book.author}${book.year ? ` (${book.year})` : ''} · Categoria: ${book.subject}.\n\nEste título foi adicionado do catálogo Open Library. Você pode clicar em "Carregar Texto Online", colar capítulos em "Editar / Colar Texto" ou importar um arquivo .TXT para ler aqui.`;
@@ -993,6 +1210,29 @@ export const BooksView: React.FC<BooksViewProps> = ({
                     className="min-h-[36px] px-3 rounded border border-light-outline-variant dark:border-dark-outline-variant font-body text-label-sm hover:border-light-primary dark:hover:border-dark-primary"
                   >
                     Importar .TXT
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDownloadBookOffline(readerBook)}
+                    disabled={offlineDownloadingBookId === readerBook.id}
+                    className={`min-h-[36px] px-3 rounded border font-body text-label-sm font-semibold ${
+                      offlineKeys.has(buildOfflineKey('book', readerBook.id))
+                        ? 'border-cat-emerald/50 text-cat-emerald bg-cat-emerald/10'
+                        : 'border-light-primary/60 dark:border-dark-primary/60 text-light-primary dark:text-dark-primary'
+                    } disabled:opacity-50`}
+                  >
+                    {offlineDownloadingBookId === readerBook.id
+                      ? offlineDownloadProgress || 'Baixando...'
+                      : offlineKeys.has(buildOfflineKey('book', readerBook.id))
+                        ? 'Salvo Offline ✓'
+                        : 'Baixar Offline'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadBookTxt(readerBook)}
+                    className="min-h-[36px] px-3 rounded border border-light-outline-variant dark:border-dark-outline-variant font-body text-label-sm hover:border-light-primary dark:hover:border-dark-primary"
+                  >
+                    Baixar .TXT
                   </button>
                   <input
                     ref={txtUploadRef}
@@ -1203,7 +1443,7 @@ export const BooksView: React.FC<BooksViewProps> = ({
                     ref={mp3AudioRef}
                     controls
                     preload="metadata"
-                    src={`/api/podcast/audio?url=${encodeURIComponent(activeMp3.audioUrl)}`}
+                    src={resolvedMp3Src || `/api/podcast/audio?url=${encodeURIComponent(activeMp3.audioUrl)}`}
                     onPlay={() => {
                       onPauseBackgroundAudio?.();
                       stopTtsNarration();
@@ -1226,15 +1466,16 @@ export const BooksView: React.FC<BooksViewProps> = ({
                   <ul className="max-h-56 overflow-y-auto divide-y divide-light-outline-variant dark:divide-dark-outline-variant">
                     {readerBook.audioTracks.map((tr, idx) => {
                       const active = idx === activeMp3Idx;
+                      const isTrackOffline = offlineKeys.has(buildOfflineKey('book', tr.id));
                       return (
-                        <li key={tr.id}>
+                        <li key={tr.id} className="flex items-center gap-1">
                           <button
                             type="button"
                             onClick={() => {
                               setActiveMp3Idx(idx);
                               setIsMp3Playing(true);
                             }}
-                            className={`w-full py-2 px-1 flex items-center justify-between gap-2 text-left text-body-sm ${
+                            className={`flex-1 py-2 px-1 flex items-center justify-between gap-2 text-left text-body-sm min-w-0 ${
                               active
                                 ? 'text-light-primary dark:text-dark-primary font-semibold'
                                 : 'text-light-on-surface dark:text-dark-on-surface'
@@ -1242,11 +1483,29 @@ export const BooksView: React.FC<BooksViewProps> = ({
                           >
                             <span className="truncate">
                               {active && isMp3Playing ? '▶ ' : ''}
+                              {isTrackOffline ? '✓ ' : ''}
                               {tr.title}
                             </span>
                             <span className="font-mono text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant tabular-nums shrink-0">
                               {tr.durationLabel}
                             </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void downloadMediaFileToDevice({
+                                key: buildOfflineKey('book', tr.id),
+                                url: `/api/podcast/audio?url=${encodeURIComponent(tr.audioUrl)}`,
+                                filename: sanitizeFilename(`${readerBook.title}_${tr.title}`, 'mp3'),
+                              })
+                                .then(() => onShowToast(`Baixando "${tr.title}.mp3"`))
+                                .catch(() => onShowToast('Falha ao baixar este capítulo MP3.'))
+                            }
+                            aria-label={`Baixar MP3 ${tr.title}`}
+                            title="Baixar MP3"
+                            className="inline-flex items-center justify-center min-w-[32px] min-h-[32px] rounded-full text-light-primary dark:text-dark-primary shrink-0"
+                          >
+                            <span className="material-symbols-outlined text-[17px]">download</span>
                           </button>
                         </li>
                       );
@@ -1459,7 +1718,7 @@ export const BooksView: React.FC<BooksViewProps> = ({
           <div className="flex flex-col gap-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-1 p-1 rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant overflow-x-auto">
-                {(['Todos', 'Lendo', 'Quero ler', 'Concluído'] as const).map((st) => {
+                {(['Todos', 'Offline', 'Lendo', 'Quero ler', 'Concluído'] as const).map((st) => {
                   const active = statusFilter === st;
                   return (
                     <button
@@ -1652,7 +1911,7 @@ export const BooksView: React.FC<BooksViewProps> = ({
                             ) : null;
                           })()}
 
-                          {/* Primary Written & Audio Reader Buttons */}
+                          {/* Primary Written & Audio Reader Buttons + Offline Download */}
                           <div className="flex flex-wrap items-center gap-2 pt-1.5">
                             <button
                               type="button"
@@ -1673,6 +1932,42 @@ export const BooksView: React.FC<BooksViewProps> = ({
                                 headphones
                               </span>
                               <span>Ouvir em Áudio</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDownloadBookOffline(book)}
+                              disabled={offlineDownloadingBookId === book.id}
+                              className={`inline-flex items-center gap-1 min-h-[38px] px-3 py-1 rounded-full border font-body text-label-sm font-semibold ${
+                                offlineKeys.has(buildOfflineKey('book', book.id))
+                                  ? 'border-cat-emerald/50 text-cat-emerald bg-cat-emerald/10'
+                                  : 'border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface hover:border-light-primary dark:hover:border-dark-primary'
+                              } disabled:opacity-50`}
+                            >
+                              <span className="material-symbols-outlined text-[16px]">
+                                {offlineDownloadingBookId === book.id
+                                  ? 'downloading'
+                                  : offlineKeys.has(buildOfflineKey('book', book.id))
+                                    ? 'cloud_done'
+                                    : 'cloud_download'}
+                              </span>
+                              <span>
+                                {offlineDownloadingBookId === book.id
+                                  ? offlineDownloadProgress || 'Baixando...'
+                                  : offlineKeys.has(buildOfflineKey('book', book.id))
+                                    ? 'Offline ✓'
+                                    : 'Salvar Offline'}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadBookTxt(book)}
+                              title="Baixar texto (.TXT)"
+                              className="inline-flex items-center gap-1 min-h-[38px] px-2.5 py-1 rounded-full border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface-variant dark:text-dark-on-surface-variant hover:text-light-primary dark:hover:text-dark-primary font-body text-label-sm"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">
+                                download
+                              </span>
+                              <span>.TXT</span>
                             </button>
                           </div>
                         </div>
@@ -1882,68 +2177,93 @@ export const BooksView: React.FC<BooksViewProps> = ({
                 Nenhum livro encontrado no catálogo online para esta busca.
               </p>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {onlineResults.map((book) => {
-                  const inShelf = books.some(
-                    (b) => b.title.toLowerCase() === book.title.toLowerCase()
-                  );
-                  const isLoadingBook = loadingWrittenBookId === book.id;
-                  return (
-                    <article
-                      key={book.id}
-                      className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-3.5 flex gap-3 justify-between"
-                    >
-                      <ResilientImage
-                        src={book.coverUrl}
-                        alt={book.title}
-                        fallbackType="album"
-                        className="w-16 h-24 rounded object-cover shrink-0 border border-light-outline-variant dark:border-dark-outline-variant"
-                      />
-                      <div className="min-w-0 flex-1 flex flex-col justify-between gap-2">
-                        <div>
-                          <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant block truncate">
-                            {book.subject} · {book.pages} pág.
-                          </span>
-                          <h3 className="font-headline text-label-lg text-light-on-surface dark:text-dark-on-surface line-clamp-2">
-                            {book.title}
-                          </h3>
-                          <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant truncate">
-                            {book.author}
-                            {book.year ? ` (${book.year})` : ''}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void handleAddSearchResult(book, true)}
-                            disabled={isLoadingBook}
-                            className="flex-1 inline-flex items-center justify-center gap-1 min-h-[38px] px-3 py-1 rounded-full bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary font-body text-label-sm font-semibold disabled:opacity-60"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">
-                              menu_book
+              <>
+                <div className="flex items-center justify-between text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
+                  <span>{onlineResults.length} livros carregados (página {onlinePage})</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {onlineResults.map((book) => {
+                    const inShelf = books.some(
+                      (b) => b.title.toLowerCase() === book.title.toLowerCase()
+                    );
+                    const isLoadingBook = loadingWrittenBookId === book.id;
+                    return (
+                      <article
+                        key={book.id}
+                        className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-3.5 flex gap-3 justify-between"
+                      >
+                        <ResilientImage
+                          src={book.coverUrl}
+                          alt={book.title}
+                          fallbackType="album"
+                          className="w-16 h-24 rounded object-cover shrink-0 border border-light-outline-variant dark:border-dark-outline-variant"
+                        />
+                        <div className="min-w-0 flex-1 flex flex-col justify-between gap-2">
+                          <div>
+                            <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant block truncate">
+                              {book.subject} · {book.pages} pág.{book.textUrl ? ' · Texto Completo' : ''}
                             </span>
-                            <span>{isLoadingBook ? 'Abrindo...' : 'Ler Escrito'}</span>
-                          </button>
+                            <h3 className="font-headline text-label-lg text-light-on-surface dark:text-dark-on-surface line-clamp-2">
+                              {book.title}
+                            </h3>
+                            <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant truncate">
+                              {book.author}
+                              {book.year ? ` (${book.year})` : ''}
+                            </p>
+                          </div>
 
-                          <button
-                            type="button"
-                            onClick={() => void handleAddSearchResult(book, false)}
-                            disabled={inShelf || isLoadingBook}
-                            className={`min-h-[38px] px-3 py-1 rounded-full font-body text-label-sm font-medium transition-colors ${
-                              inShelf
-                                ? 'bg-light-surface-container dark:bg-dark-surface-container text-cat-emerald border border-cat-emerald/40'
-                                : 'border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface hover:border-light-primary dark:hover:border-dark-primary'
-                            }`}
-                          >
-                            {inShelf ? 'Na estante' : 'Salvar'}
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleAddSearchResult(book, true)}
+                              disabled={isLoadingBook}
+                              className="flex-1 inline-flex items-center justify-center gap-1 min-h-[38px] px-3 py-1 rounded-full bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary font-body text-label-sm font-semibold disabled:opacity-60"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">
+                                menu_book
+                              </span>
+                              <span>{isLoadingBook ? 'Abrindo...' : 'Ler Escrito'}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => void handleAddSearchResult(book, false)}
+                              disabled={inShelf || isLoadingBook}
+                              className={`min-h-[38px] px-3 py-1 rounded-full font-body text-label-sm font-medium transition-colors ${
+                                inShelf
+                                  ? 'bg-light-surface-container dark:bg-dark-surface-container text-cat-emerald border border-cat-emerald/40'
+                                  : 'border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface hover:border-light-primary dark:hover:border-dark-primary'
+                              }`}
+                            >
+                              {inShelf ? 'Na estante' : 'Salvar'}
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
+                      </article>
+                    );
+                  })}
+                </div>
+
+                {onlineHasMore && (
+                  <div className="flex justify-center pt-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void fetchOnlineBooks({
+                          q: onlineQuery.trim() || undefined,
+                          category: onlineCategory,
+                          page: onlinePage + 1,
+                          append: true,
+                        })
+                      }
+                      disabled={isLoadingMoreOnline}
+                      className="min-h-[44px] px-6 py-2 rounded-full border border-light-primary dark:border-dark-primary text-light-primary dark:text-dark-primary font-body text-label-lg font-semibold hover:bg-light-primary/10 dark:hover:bg-dark-primary/10 disabled:opacity-60"
+                    >
+                      {isLoadingMoreOnline ? 'Carregando mais livros...' : 'Carregar mais livros'}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -1997,46 +2317,70 @@ export const BooksView: React.FC<BooksViewProps> = ({
                 Nenhum audiolivro encontrado para esta busca. Tente termos como &ldquo;Machado&rdquo; ou deixe vazio para ver clássicos em português.
               </p>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {audiobookResults.map((ab) => {
-                  const isLoading = loadingAudiobookId === ab.identifier;
-                  return (
-                    <article
-                      key={ab.id}
-                      className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-3.5 flex gap-3 justify-between"
-                    >
-                      <ResilientImage
-                        src={ab.coverUrl}
-                        alt={ab.title}
-                        fallbackType="album"
-                        className="w-16 h-24 rounded object-cover shrink-0 border border-light-outline-variant dark:border-dark-outline-variant"
-                      />
-                      <div className="min-w-0 flex-1 flex flex-col justify-between gap-2">
-                        <div>
-                          <span className="font-body text-label-sm text-cat-emerald block truncate">
-                            Audiolivro MP3 · LibriVox
-                          </span>
-                          <h3 className="font-headline text-label-lg text-light-on-surface dark:text-dark-on-surface line-clamp-2">
-                            {ab.title}
-                          </h3>
-                          <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant truncate">
-                            {ab.author}
-                          </p>
-                        </div>
+              <>
+                <div className="flex items-center justify-between text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
+                  <span>{audiobookResults.length} audiolivros carregados (página {audiobookPage})</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {audiobookResults.map((ab) => {
+                    const isLoading = loadingAudiobookId === ab.identifier;
+                    return (
+                      <article
+                        key={ab.id}
+                        className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-3.5 flex gap-3 justify-between"
+                      >
+                        <ResilientImage
+                          src={ab.coverUrl}
+                          alt={ab.title}
+                          fallbackType="album"
+                          className="w-16 h-24 rounded object-cover shrink-0 border border-light-outline-variant dark:border-dark-outline-variant"
+                        />
+                        <div className="min-w-0 flex-1 flex flex-col justify-between gap-2">
+                          <div>
+                            <span className="font-body text-label-sm text-cat-emerald block truncate">
+                              Audiolivro MP3 · LibriVox
+                            </span>
+                            <h3 className="font-headline text-label-lg text-light-on-surface dark:text-dark-on-surface line-clamp-2">
+                              {ab.title}
+                            </h3>
+                            <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant truncate">
+                              {ab.author}
+                            </p>
+                          </div>
 
-                        <button
-                          type="button"
-                          onClick={() => void handleSaveAndOpenAudiobook(ab)}
-                          disabled={isLoading}
-                          className="w-full min-h-[38px] px-3 py-1 rounded-full bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary font-body text-body-sm font-semibold disabled:opacity-60"
-                        >
-                          {isLoading ? 'Carregando texto e MP3...' : 'Ler + Ouvir MP3'}
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
+                          <button
+                            type="button"
+                            onClick={() => void handleSaveAndOpenAudiobook(ab)}
+                            disabled={isLoading}
+                            className="w-full min-h-[38px] px-3 py-1 rounded-full bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary font-body text-body-sm font-semibold disabled:opacity-60"
+                          >
+                            {isLoading ? 'Carregando texto e MP3...' : 'Ler + Ouvir MP3'}
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+
+                {audiobookHasMore && (
+                  <div className="flex justify-center pt-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void fetchAudiobooks(
+                          audiobookQuery.trim() || undefined,
+                          audiobookPage + 1,
+                          true
+                        )
+                      }
+                      disabled={isLoadingMoreAudiobooks}
+                      className="min-h-[44px] px-6 py-2 rounded-full border border-light-primary dark:border-dark-primary text-light-primary dark:text-dark-primary font-body text-label-lg font-semibold hover:bg-light-primary/10 dark:hover:bg-dark-primary/10 disabled:opacity-60"
+                    >
+                      {isLoadingMoreAudiobooks ? 'Carregando mais audiolivros...' : 'Carregar mais audiolivros'}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}

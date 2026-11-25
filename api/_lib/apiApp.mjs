@@ -29,18 +29,23 @@ function parseDurationText(text) {
   if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
   return 0;
 }
-async function searchYouTubeFullTracks(query, artistFilter) {
-  const searchQuery = artistFilter ? `${artistFilter} m\xFAsica oficial` : query;
+const MUSIC_PAGE_SUFFIXES = ["", "ao vivo", "oficial", "completo", "acústico", "álbum", "clipe", "louvor"];
+async function searchYouTubeFullTracks(query, artistFilter, page = 1) {
+  const safePage = Math.max(1, page);
+  const suffix = MUSIC_PAGE_SUFFIXES[(safePage - 1) % MUSIC_PAGE_SUFFIXES.length];
+  const baseQuery = artistFilter ? `${artistFilter} música oficial` : query;
+  const searchQuery = suffix ? `${baseQuery} ${suffix}` : baseQuery;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8e3);
   try {
     const res = await fetch(
-      `https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}`,
+      `https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}&hl=pt&gl=BR`,
       {
         signal: controller.signal,
         headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-          "Accept-Language": "pt-BR,pt;q=0.9"
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+          "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+          "Cookie": "SOCS=CAESHAgBEhJnd3NfMjAyMzA4MTAtMF9SQzIaAmVuIAEaBgiA_LyaBg; CONSENT=YES+cb"
         }
       }
     );
@@ -55,19 +60,19 @@ async function searchYouTubeFullTracks(query, artistFilter) {
     const results = [];
     const seen = /* @__PURE__ */ new Set();
     const walk = (node) => {
-      if (!node || typeof node !== "object" || results.length >= 24) return;
+      if (!node || typeof node !== "object" || results.length >= 50) return;
       const obj = node;
       if (typeof obj.videoId === "string" && obj.title && obj.lengthText && typeof obj.lengthText === "object") {
         const videoId = obj.videoId;
-        if (!seen.has(videoId)) {
+        if (/^[a-zA-Z0-9_-]{11}$/.test(videoId) && !seen.has(videoId)) {
           const lengthObj = obj.lengthText;
-          const durText = lengthObj.simpleText || "";
+          const durText = lengthObj.simpleText || (Array.isArray(lengthObj.runs) ? lengthObj.runs.map((r) => r.text || "").join("") : "");
           const durationSeconds = parseDurationText(durText);
-          if (durationSeconds >= 75 && durationSeconds <= 900) {
+          if (durationSeconds >= 30 && durationSeconds <= 14400) {
             const titleObj = obj.title;
-            const rawTitle = titleObj.runs?.map((r) => r.text || "").join("") || titleObj.simpleText || "M\xFAsica Completa";
+            const rawTitle = titleObj.runs?.map((r) => r.text || "").join("") || titleObj.simpleText || "Música Completa";
             const ownerObj = obj.ownerText || obj.longBylineText;
-            const channel = ownerObj?.runs?.[0]?.text?.trim() || artistFilter || "YouTube M\xFAsica";
+            const channel = ownerObj?.runs?.[0]?.text?.trim() || artistFilter || "YouTube";
             let cleanTitle = rawTitle.trim();
             let trackArtist = artistFilter || channel;
             const dashParts = cleanTitle.split(" - ");
@@ -82,15 +87,43 @@ async function searchYouTubeFullTracks(query, artistFilter) {
               id: `yt-${videoId}`,
               title: cleanTitle,
               artist: trackArtist,
-              album: "M\xFAsica Completa",
+              album: `YouTube · ${channel}`,
               durationSeconds,
               coverUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
               youtubeId: videoId,
               isRealAudio: true,
-              isFullTrack: true
+              isFullTrack: true,
+              isDownloadable: false,
+              sourceLabel: "YouTube"
             });
           }
         }
+      } else if (
+        typeof obj.contentId === "string" &&
+        /^[a-zA-Z0-9_-]{11}$/.test(obj.contentId) &&
+        obj.metadata?.lockupMetadataViewModel?.title?.content &&
+        !seen.has(obj.contentId)
+      ) {
+        const videoId = obj.contentId;
+        const rawTitle = String(obj.metadata.lockupMetadataViewModel.title.content).trim();
+        const metaRows = obj.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.metadataRows;
+        const channel = Array.isArray(metaRows) && metaRows[0]?.metadataParts?.[0]?.text?.content
+          ? String(metaRows[0].metadataParts[0].text.content).trim()
+          : artistFilter || "YouTube";
+        seen.add(videoId);
+        results.push({
+          id: `yt-${videoId}`,
+          title: rawTitle,
+          artist: artistFilter || channel,
+          album: `YouTube · ${channel}`,
+          durationSeconds: 240,
+          coverUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+          youtubeId: videoId,
+          isRealAudio: true,
+          isFullTrack: true,
+          isDownloadable: false,
+          sourceLabel: "YouTube"
+        });
       }
       if (Array.isArray(node)) {
         for (const item of node) walk(item);
@@ -235,29 +268,80 @@ async function resolveYouTubeVideoMeta(urlOrId) {
     category: "direto"
   };
 }
-async function searchAudiusFullTracks(query) {
+async function searchDeezerTracks(query, page = 1) {
+  const safePage = Math.max(1, page);
+  const limit = 16;
+  const index = (safePage - 1) * limit;
+  const json = await fetchJsonWithTimeout(
+    `https://api.deezer.com/search?q=${encodeURIComponent(query)}&limit=${limit}&index=${index}`,
+    4500
+  );
+  if (!Array.isArray(json?.data)) return [];
+  return json.data.filter((t) => typeof t?.id !== "undefined" && typeof t?.preview === "string" && t.preview.startsWith("http")).map((t) => ({
+    id: `dz-${t.id}`,
+    title: String(t.title || "Música").trim(),
+    artist: String(t.artist?.name || "Artista").trim(),
+    album: t.album?.title ? `${t.album.title} (Deezer · Prévia MP3)` : "Deezer · Prévia MP3",
+    durationSeconds: 30,
+    coverUrl: t.album?.cover_xl || t.album?.cover_medium || t.artist?.picture_medium || "",
+    audioUrl: t.preview,
+    isRealAudio: true,
+    isFullTrack: false,
+    isDownloadable: true,
+    sourceLabel: "Deezer"
+  }));
+}
+async function searchItunesTracks(query, page = 1) {
+  const safePage = Math.max(1, page);
+  const limit = 16;
+  const offset = (safePage - 1) * limit;
+  const json = await fetchJsonWithTimeout(
+    `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&country=BR&limit=${limit}&offset=${offset}`,
+    4500
+  );
+  if (!Array.isArray(json?.results)) return [];
+  return json.results.filter((t) => typeof t?.trackId !== "undefined" && typeof t?.previewUrl === "string" && t.previewUrl.startsWith("http")).map((t) => ({
+    id: `itunes-${t.trackId}`,
+    title: String(t.trackName || "Música").trim(),
+    artist: String(t.artistName || "Artista").trim(),
+    album: t.collectionName ? `${t.collectionName} (Apple Music · Prévia)` : "Apple Music · Prévia",
+    durationSeconds: 30,
+    coverUrl: typeof t.artworkUrl100 === "string" ? t.artworkUrl100.replace("100x100bb", "400x400bb") : "",
+    audioUrl: t.previewUrl,
+    isRealAudio: true,
+    isFullTrack: false,
+    isDownloadable: true,
+    sourceLabel: "Apple Music"
+  }));
+}
+async function searchAudiusFullTracks(query, page = 1) {
+  const safePage = Math.max(1, page);
+  const limit = 24;
+  const offset = (safePage - 1) * limit;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5e3);
+  const timeout = setTimeout(() => controller.abort(), 5500);
   try {
     const res = await fetch(
       `https://discoveryprovider.audius.co/v1/tracks/search?query=${encodeURIComponent(
         query
-      )}&app_name=MeuMundoMinhaVida`,
+      )}&limit=${limit}&offset=${offset}&app_name=MeuMundoMinhaVida`,
       { signal: controller.signal }
     );
     if (!res.ok) return [];
     const json = await res.json();
     if (!Array.isArray(json.data)) return [];
-    return json.data.filter((t) => typeof t.id === "string" && (t.duration || 0) >= 60).slice(0, 8).map((t) => ({
+    return json.data.filter((t) => typeof t.id === "string" && (t.duration || 0) >= 30).map((t) => ({
       id: `audius-${t.id}`,
       title: t.title || "Faixa Completa",
       artist: t.user?.name || "Artista",
-      album: "\xC1udio Completo",
+      album: "MP3 Completo · Audius",
       durationSeconds: t.duration || 210,
       coverUrl: t.artwork?.["480x480"] || t.artwork?.["150x150"] || "",
       audioUrl: `https://discoveryprovider.audius.co/v1/tracks/${t.id}/stream?app_name=MeuMundoMinhaVida`,
       isRealAudio: true,
-      isFullTrack: true
+      isFullTrack: true,
+      isDownloadable: true,
+      sourceLabel: "Audius · MP3"
     }));
   } catch {
     return [];
@@ -265,23 +349,348 @@ async function searchAudiusFullTracks(query) {
     clearTimeout(timeout);
   }
 }
-async function fetchRadioStations(query, tag) {
+async function searchArchiveMusicTracks(query, page = 1) {
+  const safePage = Math.max(1, page);
+  const cleanQ = query.replace(/[():"]/g, " ").trim();
+  const lucene = cleanQ
+    ? `mediatype:audio AND format:MP3 AND (${cleanQ})`
+    : `mediatype:audio AND format:MP3 AND (music OR gospel OR instrumental)`;
+  const searchJson = await fetchJsonWithTimeout(
+    `https://archive.org/advancedsearch.php?q=${encodeURIComponent(
+      lucene
+    )}&fl[]=identifier,title,creator&rows=12&page=${safePage}&output=json`,
+    5500
+  );
+  const docs = searchJson?.response?.docs;
+  if (!Array.isArray(docs) || docs.length === 0) return [];
+  const resolved = await Promise.all(
+    docs.slice(0, 8).map(async (d) => {
+      const identifier = typeof d.identifier === "string" ? d.identifier.trim() : "";
+      if (!identifier || /[^a-zA-Z0-9_.-]/.test(identifier)) return null;
+      const meta = await fetchJsonWithTimeout(
+        `https://archive.org/metadata/${encodeURIComponent(identifier)}/files`,
+        4e3
+      );
+      const files = Array.isArray(meta?.result) ? meta.result : [];
+      const mp3 = files.find(
+        (f) => typeof f.name === "string" && f.name.toLowerCase().endsWith(".mp3")
+      );
+      if (!mp3?.name) return null;
+      const rawLen = parseFloat(mp3.length || "0");
+      const creator = Array.isArray(d.creator) ? d.creator[0] : d.creator;
+      return {
+        id: `arc-${identifier}`,
+        title: String(d.title || mp3.title || "Áudio MP3").trim(),
+        artist: String(creator || "Arquivo Público").trim(),
+        album: "MP3 Completo · Archive",
+        durationSeconds: Number.isFinite(rawLen) && rawLen > 20 ? Math.round(rawLen) : 240,
+        coverUrl: `https://archive.org/services/img/${encodeURIComponent(identifier)}`,
+        audioUrl: `https://archive.org/download/${encodeURIComponent(identifier)}/${encodeURIComponent(mp3.name)}`,
+        isRealAudio: true,
+        isFullTrack: true,
+        isDownloadable: true,
+        sourceLabel: "Archive · MP3"
+      };
+    })
+  );
+  return resolved.filter((t) => t !== null);
+}
+function mapRadioBrowserStation(s, fallbackTag, forceWebRadio = false) {
+  if (!s || s.hls === 1) return null;
+  const streamUrl = (s.url_resolved || s.url || "").trim();
+  if (!streamUrl.startsWith("http")) return null;
+  const cleanName = (s.name || "Rádio Online").trim();
+  const rawTags = (s.tags || "").split(",").map((t) => t.trim()).filter(Boolean);
+  const tagString = rawTags.join(" ").toLowerCase();
+  const isWeb = forceWebRadio || tagString.includes("web") || cleanName.toLowerCase().includes("web");
+  const fmMatch = cleanName.match(/(\d{2,3}[.,]\d)\s*(?:fm)?/i);
+  const frequency = isWeb && !fmMatch
+    ? `Web · ${s.bitrate || 128} kbps`
+    : fmMatch
+      ? `${fmMatch[1].replace(",", ".")} FM`
+      : s.bitrate
+        ? `${s.bitrate} kbps`
+        : "Web Radio";
+  const locationLabel = s.countrycode && s.countrycode !== "BR"
+    ? `${s.country || s.countrycode} · Ao vivo`
+    : s.state
+      ? `${s.state}, Brasil`
+      : isWeb
+        ? "Rádio Web · Ao vivo"
+        : "Brasil · Transmissão ao vivo";
+  return {
+    id: s.stationuuid || `rad-${Math.random().toString(36).slice(2)}`,
+    name: cleanName,
+    frequency,
+    program: locationLabel,
+    genre: rawTags.slice(0, 2).join(" · ") || (fallbackTag && fallbackTag !== "todas" ? (fallbackTag === "webradio" ? "Rádio Web" : fallbackTag) : "Rádio Ao Vivo"),
+    favicon: s.favicon && s.favicon.startsWith("https://") ? s.favicon : void 0,
+    streamUrl,
+    bitrate: s.bitrate || 128,
+    codec: s.codec || "MP3",
+    isLiveReal: true,
+    isWebRadio: isWeb
+  };
+}
+const BRAZIL_STATE_DEFS = [
+  { uf: "AC", name: "Acre", stateTerms: ["acre", "ac"], cityTerms: ["rio branco", "cruzeiro do sul"], tuneInIds: ["r101758"] },
+  { uf: "AL", name: "Alagoas", stateTerms: ["alagoas", "al"], cityTerms: ["maceio", "arapiraca"], tuneInIds: ["r100584"] },
+  { uf: "AP", name: "Amapá", stateTerms: ["amapa", "ap"], cityTerms: ["macapa", "santana"], tuneInIds: ["r101759", "r102292"] },
+  { uf: "AM", name: "Amazonas", stateTerms: ["amazonas", "am"], cityTerms: ["manaus", "parintins", "itacoatiara"], tuneInIds: ["r100574"] },
+  { uf: "BA", name: "Bahia", stateTerms: ["bahia", "ba"], cityTerms: ["salvador", "feira de santana", "vitoria da conquista", "ilheus", "itabuna", "barreiras", "juazeiro"], tuneInIds: ["r100563"] },
+  { uf: "CE", name: "Ceará", stateTerms: ["ceara", "ce"], cityTerms: ["fortaleza", "juazeiro do norte", "sobral"], tuneInIds: ["r100565"] },
+  { uf: "DF", name: "Distrito Federal", stateTerms: ["distrito federal", "df", "brasilia"], cityTerms: ["taguatinga", "ceilandia"], tuneInIds: ["r100559"] },
+  { uf: "ES", name: "Espírito Santo", stateTerms: ["espirito santo", "espirio", "es"], cityTerms: ["vila velha", "cariacica", "cachoeiro de itapemirim", "linhares"], tuneInIds: ["r100582"] },
+  { uf: "GO", name: "Goiás", stateTerms: ["goias", "go"], cityTerms: ["goiania", "anapolis", "rio verde", "aparecida de goiania"], tuneInIds: ["r100566"] },
+  { uf: "MA", name: "Maranhão", stateTerms: ["maranhao", "ma"], cityTerms: ["sao luis", "imperatriz", "caxias"], tuneInIds: ["r100572"] },
+  { uf: "MT", name: "Mato Grosso", stateTerms: ["mato grosso", "mt"], cityTerms: ["cuiaba", "varzea grande", "rondonopolis", "sinop"], tuneInIds: ["r100575"] },
+  { uf: "MS", name: "Mato Grosso do Sul", stateTerms: ["mato grosso do sul", "ms"], cityTerms: ["campo grande", "dourados", "tres lagoas"], tuneInIds: ["r100576"] },
+  { uf: "MG", name: "Minas Gerais", stateTerms: ["minas gerais", "mg"], cityTerms: ["belo horizonte", "uberlandia", "juiz de fora", "contagem", "montes claros", "uberaba"], tuneInIds: ["r100585"] },
+  { uf: "PA", name: "Pará", stateTerms: ["para", "pa"], cityTerms: ["belem", "santarem", "maraba", "castanhal", "ananindeua"], tuneInIds: ["r100558"] },
+  { uf: "PB", name: "Paraíba", stateTerms: ["paraiba", "pb"], cityTerms: ["joao pessoa", "campina grande", "patos", "cajazeiras"], tuneInIds: ["r100570"] },
+  { uf: "PR", name: "Paraná", stateTerms: ["parana", "pr"], cityTerms: ["curitiba", "londrina", "maringa", "cascavel", "foz do iguacu", "ponta grossa"], tuneInIds: ["r100560"] },
+  { uf: "PE", name: "Pernambuco", stateTerms: ["pernambuco", "pe"], cityTerms: ["recife", "olinda", "caruaru", "petrolina"], tuneInIds: ["r100569"] },
+  { uf: "PI", name: "Piauí", stateTerms: ["piaui", "pi"], cityTerms: ["teresina", "parnaiba", "picos"], tuneInIds: ["r100571"] },
+  { uf: "RJ", name: "Rio de Janeiro", stateTerms: ["rio de janeiro", "rj"], cityTerms: ["niteroi", "campos dos goytacazes", "petropolis", "volta redonda", "duque de caxias"], tuneInIds: ["r100562"] },
+  { uf: "RN", name: "Rio Grande do Norte", stateTerms: ["rio grande do norte", "rn"], cityTerms: ["natal", "mossoro"], tuneInIds: ["r100580"] },
+  { uf: "RS", name: "Rio Grande do Sul", stateTerms: ["rio grande do sul", "rs"], cityTerms: ["porto alegre", "caxias do sul", "pelotas", "santa maria", "canoas"], tuneInIds: ["r100561"] },
+  { uf: "RO", name: "Rondônia", stateTerms: ["rondonia", "ro"], cityTerms: ["porto velho", "ji-parana", "ariquemes"], tuneInIds: ["r101760"] },
+  { uf: "RR", name: "Roraima", stateTerms: ["roraima", "rr"], cityTerms: ["boa vista"], tuneInIds: ["r101921"] },
+  { uf: "SC", name: "Santa Catarina", stateTerms: ["santa catarina", "sc"], cityTerms: ["florianopolis", "joinville", "blumenau", "chapeco", "criciuma", "itajai"], tuneInIds: ["r100568"] },
+  { uf: "SP", name: "São Paulo", stateTerms: ["sao paulo", "sp"], cityTerms: ["campinas", "santos", "ribeirao preto", "sorocaba", "sao jose dos campos", "bauru", "piracicaba", "guarulhos"], tuneInIds: ["r100564"] },
+  { uf: "SE", name: "Sergipe", stateTerms: ["sergipe", "se"], cityTerms: ["aracaju"], tuneInIds: ["r100583"] },
+  { uf: "TO", name: "Tocantins", stateTerms: ["tocantins", "to"], cityTerms: ["palmas", "araguaina", "gurupi"], tuneInIds: ["r101922"] }
+];
+let cachedBrStations = null;
+let cachedBrStationsAt = 0;
+const tuneInStateCache = /* @__PURE__ */ new Map();
+function normGeoText(str) {
+  return String(str || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+function findBrStateDef(input) {
+  const n = normGeoText(input).trim();
+  if (!n || n === "todos" || n === "all") return null;
+  return BRAZIL_STATE_DEFS.find(
+    (d) => d.uf.toLowerCase() === n || normGeoText(d.name) === n || d.stateTerms.includes(n)
+  ) || null;
+}
+function hasWholeWord(haystack, term) {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`).test(haystack);
+}
+function stationMatchesBrState(raw, def) {
+  const st = normGeoText(raw.state);
+  const nm = normGeoText(raw.name);
+  const tg = normGeoText(raw.tags);
+  if (def.uf === "MT" && st.includes("mato grosso do sul")) return false;
+  if (def.uf === "PA" && (st.includes("parana") || st.includes("paraiba") || nm.includes("parana") || nm.includes("paraiba"))) {
+    if (!hasWholeWord(st, "para") && !hasWholeWord(st, "pa")) return false;
+  }
+  const ufLower = def.uf.toLowerCase();
+  if (hasWholeWord(st, ufLower)) return true;
+  for (const term of def.stateTerms) {
+    if (term.length <= 2) continue;
+    if (hasWholeWord(st, term) || hasWholeWord(nm, term) || hasWholeWord(tg, term)) return true;
+  }
+  for (const city of def.cityTerms) {
+    if (hasWholeWord(st, city) || hasWholeWord(nm, city) || hasWholeWord(tg, city)) return true;
+  }
+  if (ufLower !== "am" && new RegExp(`[-,/\\(\\s]${ufLower}(?:$|[^a-z0-9])`).test(nm)) {
+    return true;
+  }
+  return false;
+}
+async function getAllBrazilStationsCached() {
+  if (cachedBrStations && Date.now() - cachedBrStationsAt < 10 * 60 * 1e3) {
+    return cachedBrStations;
+  }
+  for (const base of RADIO_MIRRORS) {
+    const data = await fetchJsonWithTimeout(
+      `${base}/json/stations/search?countrycode=BR&hidebroken=true&order=clickcount&reverse=true&limit=2500`,
+      8500,
+      { "User-Agent": "MeuMundoMinhaVida/1.0" }
+    );
+    if (Array.isArray(data) && data.length > 0) {
+      cachedBrStations = data;
+      cachedBrStationsAt = Date.now();
+      return data;
+    }
+  }
+  return cachedBrStations || [];
+}
+async function fetchTuneInStationsForBrState(def) {
+  const cached = tuneInStateCache.get(def.uf);
+  if (cached && Date.now() - cached.at < 15 * 60 * 1e3) {
+    return cached.stations;
+  }
+  const collected = [];
+  const seenAudio = /* @__PURE__ */ new Set();
+  for (const gid of def.tuneInIds || []) {
+    const json = await fetchJsonWithTimeout(
+      `https://opml.radiotime.com/Browse.ashx?id=${encodeURIComponent(gid)}&render=json`,
+      5e3
+    );
+    const walk = (arr) => {
+      if (!Array.isArray(arr)) return;
+      for (const item of arr) {
+        if (item?.type === "audio" && typeof item.URL === "string" && item.guide_id && !seenAudio.has(item.guide_id)) {
+          seenAudio.add(item.guide_id);
+          collected.push(item);
+        }
+        if (Array.isArray(item?.children)) walk(item.children);
+      }
+    };
+    walk(json?.body);
+    if (collected.length >= 12) break;
+  }
+  const resolved = await Promise.all(
+    collected.slice(0, 10).map(async (item) => {
+      const tuneUrl = item.URL.replace(/^http:\/\//i, "https://") + (item.URL.includes("?") ? "&" : "?") + "render=json";
+      const tuneJson = await fetchJsonWithTimeout(tuneUrl, 4500);
+      const streams = Array.isArray(tuneJson?.body) ? tuneJson.body : [];
+      const pick = streams.find((s) => typeof s?.url === "string" && s.url.startsWith("http") && s.is_hls_advanced !== "true") || streams.find((s) => typeof s?.url === "string" && s.url.startsWith("http"));
+      if (!pick?.url) return null;
+      const cleanName = String(item.text || "Rádio Ao Vivo").trim();
+      const fmMatch = cleanName.match(/(\d{2,3}[.,]\d)/);
+      const isWeb = cleanName.toLowerCase().includes("web");
+      return {
+        id: `ti-${item.guide_id}`,
+        name: cleanName,
+        frequency: fmMatch ? `${fmMatch[1].replace(",", ".")} FM` : pick.bitrate ? `${pick.bitrate} kbps` : "Web FM",
+        program: `${def.name} (${def.uf}), Brasil`,
+        genre: String(item.subtext || "Rádio Ao Vivo").trim().slice(0, 48),
+        favicon: typeof item.image === "string" && item.image.startsWith("https://") ? item.image : void 0,
+        streamUrl: pick.url.trim(),
+        bitrate: Number(pick.bitrate) || 128,
+        codec: String(pick.media_type || "MP3").toUpperCase(),
+        isLiveReal: true,
+        isWebRadio: isWeb
+      };
+    })
+  );
+  const valid = resolved.filter((s) => s !== null);
+  tuneInStateCache.set(def.uf, { at: Date.now(), stations: valid });
+  return valid;
+}
+async function fetchRadioStations(query, tag, page = 1, scope = "br", state = "") {
+  const safePage = Math.max(1, page);
+  const limit = 80;
+  const offset = (safePage - 1) * limit;
+  const isWebMode = tag === "webradio";
+  const cleanState = String(state || "").trim();
+  const brStateDef = scope !== "global" ? findBrStateDef(cleanState) : null;
+  const queryBrStateDef = !brStateDef && scope !== "global" && query ? findBrStateDef(query) : null;
+
+  if (scope !== "global" && (brStateDef || queryBrStateDef)) {
+    const activeDef = brStateDef || queryBrStateDef;
+    const allBr = await getAllBrazilStationsCached();
+    const normQ = normGeoText(query);
+    const matchesState = allBr.filter((raw) => raw.hls !== 1 && (raw.url_resolved || raw.url || "").startsWith("http") && stationMatchesBrState(raw, activeDef));
+    const mappedState = matchesState.map((raw) => mapRadioBrowserStation(raw, tag, isWebMode && normGeoText(`${raw.name} ${raw.tags}`).includes("web"))).filter((s) => s !== null);
+
+    let extraTuneIn = [];
+    if (safePage === 1 && mappedState.length < 10) {
+      extraTuneIn = await fetchTuneInStationsForBrState(activeDef);
+    }
+    const mergedByKey = /* @__PURE__ */ new Map();
+    for (const s of [...mappedState, ...extraTuneIn]) {
+      const k = normGeoText(s.name).slice(0, 28);
+      if (!mergedByKey.has(k)) mergedByKey.set(k, s);
+    }
+    let pool = [...mergedByKey.values()];
+
+    if (query && !queryBrStateDef) {
+      const filteredQ = pool.filter(
+        (s) => normGeoText(s.name).includes(normQ) || normGeoText(s.genre).includes(normQ) || normGeoText(s.program).includes(normQ)
+      );
+      pool = filteredQ;
+    }
+    if (isWebMode) {
+      const webOnly = pool.filter((s) => s.isWebRadio || normGeoText(`${s.name} ${s.genre}`).includes("web"));
+      if (webOnly.length > 0) pool = webOnly;
+    } else if (tag && tag !== "todas" && tag !== "mundo") {
+      const tagMatches = pool.filter(
+        (s) => normGeoText(s.genre).includes(normGeoText(tag)) || normGeoText(s.name).includes(normGeoText(tag))
+      );
+      if (tagMatches.length > 0 || query) {
+        pool = tagMatches;
+      }
+    }
+    const pageSlice = pool.slice(offset, offset + limit);
+    return { stations: pageSlice, hasMore: offset + pageSlice.length < pool.length };
+  }
+
+  if (isWebMode) {
+    for (const base of RADIO_MIRRORS) {
+      try {
+        const buildQs = (extra) => {
+          const p = new URLSearchParams({
+            hidebroken: "true",
+            order: "clickcount",
+            reverse: "true",
+            limit: "50",
+            offset: String((safePage - 1) * 50)
+          });
+          if (scope !== "global") p.set("countrycode", "BR");
+          if (cleanState) p.set("state", cleanState);
+          for (const [k, v] of Object.entries(extra)) {
+            if (v) p.set(k, v);
+          }
+          return p.toString();
+        };
+        const hdrs = { "User-Agent": "MeuMundoMinhaVida/1.0" };
+        const urls = query
+          ? [
+              `${base}/json/stations/search?${buildQs({ name: query, tag: "webradio" })}`,
+              `${base}/json/stations/search?${buildQs({ name: query, tag: "web radio" })}`,
+              `${base}/json/stations/search?${buildQs({ name: query })}`
+            ]
+          : [
+              `${base}/json/stations/search?${buildQs({ tag: "webradio" })}`,
+              `${base}/json/stations/search?${buildQs({ tag: "web radio" })}`,
+              `${base}/json/stations/search?${buildQs({ name: "web" })}`
+            ];
+        const lists = await Promise.all(urls.map((u) => fetchJsonWithTimeout(u, 5500, hdrs)));
+        const seen = /* @__PURE__ */ new Set();
+        const combined = [];
+        for (const list of lists) {
+          if (!Array.isArray(list)) continue;
+          for (const raw of list) {
+            const mapped = mapRadioBrowserStation(raw, "webradio", true);
+            if (!mapped || seen.has(mapped.id)) continue;
+            seen.add(mapped.id);
+            combined.push(mapped);
+          }
+        }
+        if (combined.length > 0) return { stations: combined, hasMore: combined.length >= 25 };
+      } catch {
+      }
+    }
+    return { stations: [], hasMore: false };
+  }
+
   const params = new URLSearchParams({
-    countrycode: "BR",
     hidebroken: "true",
     order: "clickcount",
     reverse: "true",
-    limit: "30"
+    limit: String(limit),
+    offset: String(offset)
   });
+  if (scope !== "global" && tag !== "mundo") {
+    params.set("countrycode", "BR");
+  }
+  if (cleanState) {
+    params.set("state", cleanState);
+  }
   if (query) {
     params.set("name", query);
   }
-  if (tag && tag !== "todas") {
+  if (tag && tag !== "todas" && tag !== "mundo") {
     params.set("tag", tag);
   }
   for (const base of RADIO_MIRRORS) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6e3);
+    const timeout = setTimeout(() => controller.abort(), 6500);
     try {
       const res = await fetch(`${base}/json/stations/search?${params.toString()}`, {
         signal: controller.signal,
@@ -291,32 +700,25 @@ async function fetchRadioStations(query, tag) {
       if (!res.ok) continue;
       const data = await res.json();
       if (!Array.isArray(data)) continue;
-      const stations = data.filter((s) => s.hls !== 1).map((s) => {
-        const streamUrl = (s.url_resolved || s.url || "").trim();
-        if (!streamUrl.startsWith("http")) return null;
-        const cleanName = (s.name || "R\xE1dio Online").trim();
-        const fmMatch = cleanName.match(/(\d{2,3}[.,]\d)\s*(?:fm)?/i);
-        const frequency = fmMatch ? `${fmMatch[1].replace(",", ".")} FM` : s.bitrate ? `${s.bitrate} kbps` : "Web FM";
-        const rawTags = (s.tags || "").split(",").map((t) => t.trim()).filter(Boolean).slice(0, 2).join(" \xB7 ");
-        return {
-          id: s.stationuuid || `rad-${Math.random().toString(36).slice(2)}`,
-          name: cleanName,
-          frequency,
-          program: s.state ? `${s.state}, Brasil` : "Brasil \xB7 Transmiss\xE3o ao vivo",
-          genre: rawTags || (tag && tag !== "todas" ? tag : "R\xE1dio Brasil"),
-          favicon: s.favicon && s.favicon.startsWith("https://") ? s.favicon : void 0,
-          streamUrl,
-          bitrate: s.bitrate || 128,
-          codec: s.codec || "MP3",
-          isLiveReal: true
-        };
-      }).filter((s) => s !== null);
-      return stations;
+      const stations = data.map((s) => mapRadioBrowserStation(s, tag, false)).filter((s) => s !== null);
+      if (stations.length === 0 && cleanState && !query) {
+        const fbParams = new URLSearchParams(params);
+        fbParams.delete("state");
+        fbParams.set("name", cleanState);
+        const fbData = await fetchJsonWithTimeout(`${base}/json/stations/search?${fbParams.toString()}`, 5e3, {
+          "User-Agent": "MeuMundoMinhaVida/1.0"
+        });
+        if (Array.isArray(fbData)) {
+          const fbStations = fbData.map((s) => mapRadioBrowserStation(s, tag, false)).filter((s) => s !== null);
+          return { stations: fbStations, hasMore: fbStations.length >= 25 };
+        }
+      }
+      return { stations, hasMore: stations.length >= 25 };
     } catch {
       clearTimeout(timeout);
     }
   }
-  return [];
+  return { stations: [], hasMore: false };
 }
 const PODCAST_CATEGORY_QUERIES = {
   destaques: "__top__",
@@ -362,13 +764,14 @@ function formatRssDate(rawDate) {
     return rawDate.slice(0, 16);
   }
 }
-async function searchPodcastShows(query, category) {
+async function searchPodcastShows(query, category, page = 1) {
+  const safePage = Math.max(1, page);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8e3);
+  const timeout = setTimeout(() => controller.abort(), 8500);
   try {
-    if (!query && (!category || category === "destaques")) {
+    if (!query && (!category || category === "destaques") && safePage === 1) {
       const topRes = await fetch(
-        "https://itunes.apple.com/br/rss/toppodcasts/limit=25/json",
+        "https://itunes.apple.com/br/rss/toppodcasts/limit=100/json",
         { signal: controller.signal }
       );
       if (topRes.ok) {
@@ -398,17 +801,19 @@ async function searchPodcastShows(query, category) {
     }
     const mappedCategory = PODCAST_CATEGORY_QUERIES[category] || "";
     const term = query || (mappedCategory && mappedCategory !== "__top__" ? mappedCategory : "podcast brasil");
+    const brOffset = safePage === 1 ? 0 : (safePage - 1) * 50;
+    const usOffset = safePage === 1 ? 0 : (safePage - 1) * 30;
     const [brRes, usRes] = await Promise.all([
       fetch(
         `https://itunes.apple.com/search?media=podcast&country=BR&term=${encodeURIComponent(
           term
-        )}&limit=30`,
+        )}&limit=50&offset=${brOffset}`,
         { signal: controller.signal }
       ),
-      query ? fetch(
+      (query || safePage > 1) ? fetch(
         `https://itunes.apple.com/search?media=podcast&country=US&term=${encodeURIComponent(
           term
-        )}&limit=15`,
+        )}&limit=30&offset=${usOffset}`,
         { signal: controller.signal }
       ).catch(() => null) : Promise.resolve(null)
     ]);
@@ -451,7 +856,7 @@ async function fetchPodcastEpisodesFromRss(feedUrl, fallbackShowTitle, fallbackH
     return [];
   }
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 9e3);
+  const timeout = setTimeout(() => controller.abort(), 11e3);
   try {
     const res = await fetch(parsedUrl.toString(), {
       signal: controller.signal,
@@ -471,13 +876,13 @@ async function fetchPodcastEpisodesFromRss(feedUrl, fallbackShowTitle, fallbackH
     const channelCover = channelImgMatch?.[1] || fallbackCover;
     const itemMatches = xml.match(/<item[\s>][\s\S]*?<\/item>/gi) ?? [];
     const episodes = [];
-    for (let i = 0; i < Math.min(itemMatches.length, 40); i += 1) {
+    for (let i = 0; i < Math.min(itemMatches.length, 400); i += 1) {
       const itemXml = itemMatches[i];
       const enclosureMatch = itemXml.match(/<enclosure[^>]+url=["']([^"']+)["'][^>]*>/i) || itemXml.match(/<media:content[^>]+url=["']([^"']+)["'][^>]*>/i);
       const audioUrl = enclosureMatch?.[1]?.replace(/&amp;/g, "&").trim() || "";
       if (!audioUrl.startsWith("http")) continue;
-      const title = extractXmlTag(itemXml, "title") || `Epis\xF3dio ${i + 1}`;
-      const rawDesc = extractXmlTag(itemXml, "itunes:summary") || extractXmlTag(itemXml, "description") || extractXmlTag(itemXml, "content:encoded") || "Epis\xF3dio oficial via feed RSS.";
+      const title = extractXmlTag(itemXml, "title") || `Episódio ${i + 1}`;
+      const rawDesc = extractXmlTag(itemXml, "itunes:summary") || extractXmlTag(itemXml, "description") || extractXmlTag(itemXml, "content:encoded") || "Episódio oficial via feed RSS.";
       const summary = rawDesc.length > 220 ? `${rawDesc.slice(0, 217).trim()}...` : rawDesc;
       const durRaw = extractXmlTag(itemXml, "itunes:duration");
       const parsedSec = parseItunesDuration(durRaw);
@@ -622,50 +1027,146 @@ const BOOK_CATEGORY_QUERIES = {
   classicos: "literatura brasileira machado de assis",
   tecnologia: "tecnologia programacao design"
 };
-async function searchBooksCatalog(query, category) {
+async function searchBooksCatalog(query, category, page = 1) {
+  const safePage = Math.max(1, page);
   const term = query || BOOK_CATEGORY_QUERIES[category] || "investimentos financas";
-  const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(
+  const cleanTerm = term.replace(/[():"]/g, " ").trim() || "books";
+  const words = cleanTerm.split(/\s+/).filter(Boolean);
+  const archiveExpr = !query && words.length > 1 ? words.join(" OR ") : cleanTerm;
+  const wikiTerm = !query && words.length > 2 ? words.slice(0, 2).join(" ") : cleanTerm;
+  const olUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(
     term
-  )}&limit=24`;
-  const json = await fetchJsonWithTimeout(url, 6500);
-  if (!json || !Array.isArray(json.docs)) return [];
+  )}&limit=40&page=${safePage}`;
+  const gutenUrl = `https://gutendex.com/books/?search=${encodeURIComponent(
+    term
+  )}&page=${safePage}`;
+  const archiveUrl = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(
+    `mediatype:texts AND (${archiveExpr})`
+  )}&fl[]=identifier,title,creator,year,subject&rows=30&page=${safePage}&output=json`;
+  const wikiUrl = `https://pt.wikisource.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
+    wikiTerm
+  )}&srlimit=15&sroffset=${(safePage - 1) * 15}&format=json`;
+
+  const [olJson, gutenJson, archiveJson, wikiJson] = await Promise.all([
+    fetchJsonWithTimeout(olUrl, 4500),
+    fetchJsonWithTimeout(gutenUrl, 3500),
+    fetchJsonWithTimeout(archiveUrl, 5000),
+    fetchJsonWithTimeout(wikiUrl, 4000)
+  ]);
   const seen = /* @__PURE__ */ new Set();
   const results = [];
-  for (const doc of json.docs) {
-    const title = (doc.title || "").trim();
-    if (!title) continue;
-    const key = doc.key || title.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const author = Array.isArray(doc.author_name) && doc.author_name.length > 0 ? doc.author_name.slice(0, 2).join(", ") : "Autor desconhecido";
-    const coverUrl = typeof doc.cover_i === "number" ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : "";
-    const subject = Array.isArray(doc.subject) && doc.subject.length > 0 ? doc.subject[0] : category && category !== "destaques" ? category : "Geral";
-    results.push({
-      id: `ol-${key.replace(/[^a-zA-Z0-9]/g, "")}`,
-      title,
-      author,
-      year: doc.first_publish_year,
-      pages: typeof doc.number_of_pages_median === "number" && doc.number_of_pages_median > 20 ? doc.number_of_pages_median : 220,
-      coverUrl,
-      subject,
-      openLibraryKey: doc.key
-    });
+  if (Array.isArray(gutenJson?.results)) {
+    for (const g of gutenJson.results) {
+      const title = (g.title || "").trim();
+      if (!title) continue;
+      const dedupeKey = title.toLowerCase();
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      const formats = g.formats || {};
+      const textUrl = formats["text/plain; charset=utf-8"] || formats["text/plain; charset=us-ascii"] || formats["text/plain"] || "";
+      const coverUrl = formats["image/jpeg"] || "";
+      const author = Array.isArray(g.authors) && g.authors.length > 0
+        ? g.authors.slice(0, 2).map((a) => a.name).filter(Boolean).join(", ")
+        : "Domínio Público";
+      const subject = Array.isArray(g.subjects) && g.subjects.length > 0 ? g.subjects[0].split(" -- ")[0] : "Clássico";
+      results.push({
+        id: `gt-${g.id}`,
+        title,
+        author,
+        pages: 240,
+        coverUrl,
+        subject,
+        textUrl: typeof textUrl === "string" && textUrl.startsWith("http") ? textUrl : void 0
+      });
+    }
+  }
+  if (Array.isArray(archiveJson?.response?.docs)) {
+    for (const doc of archiveJson.response.docs) {
+      const identifier = typeof doc.identifier === "string" ? doc.identifier.trim() : "";
+      const title = String(doc.title || "").trim();
+      if (!identifier || !title) continue;
+      const dedupeKey = title.toLowerCase();
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      const creatorRaw = Array.isArray(doc.creator) ? doc.creator[0] : doc.creator;
+      const author = String(creatorRaw || "Domínio Público").trim();
+      const subjRaw = Array.isArray(doc.subject) ? doc.subject[0] : doc.subject;
+      const subject = String(subjRaw || (category && category !== "destaques" ? category : "Acervo Digital")).split(";")[0].trim();
+      const yearNum = typeof doc.year === "string" || typeof doc.year === "number" ? parseInt(String(doc.year), 10) : void 0;
+      results.push({
+        id: `arcbook-${identifier}`,
+        title,
+        author,
+        year: Number.isFinite(yearNum) ? yearNum : void 0,
+        pages: 220,
+        coverUrl: `https://archive.org/services/img/${encodeURIComponent(identifier)}`,
+        subject,
+        textUrl: `https://archive.org/download/${encodeURIComponent(identifier)}/${encodeURIComponent(identifier)}_djvu.txt`
+      });
+    }
+  }
+  if (Array.isArray(wikiJson?.query?.search)) {
+    for (const w of wikiJson.query.search) {
+      const rawTitle = String(w.title || "").trim();
+      const cleanTitle = rawTitle.split("/")[0].trim();
+      if (!cleanTitle) continue;
+      const dedupeKey = cleanTitle.toLowerCase();
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      results.push({
+        id: `ws-${w.pageid || results.length}`,
+        title: cleanTitle,
+        author: "Wikisource PT",
+        pages: 180,
+        coverUrl: "",
+        subject: category && category !== "destaques" ? category : "Literatura"
+      });
+    }
+  }
+  if (Array.isArray(olJson?.docs)) {
+    for (const doc of olJson.docs) {
+      const title = (doc.title || "").trim();
+      if (!title) continue;
+      const key = doc.key || title.toLowerCase();
+      const dedupeKey = title.toLowerCase();
+      if (seen.has(key) || seen.has(dedupeKey)) continue;
+      seen.add(key);
+      seen.add(dedupeKey);
+      const author = Array.isArray(doc.author_name) && doc.author_name.length > 0 ? doc.author_name.slice(0, 2).join(", ") : "Autor desconhecido";
+      const coverUrl = typeof doc.cover_i === "number" ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : "";
+      const subject = Array.isArray(doc.subject) && doc.subject.length > 0 ? doc.subject[0] : category && category !== "destaques" ? category : "Geral";
+      results.push({
+        id: `ol-${key.replace(/[^a-zA-Z0-9]/g, "")}`,
+        title,
+        author,
+        year: doc.first_publish_year,
+        pages: typeof doc.number_of_pages_median === "number" && doc.number_of_pages_median > 20 ? doc.number_of_pages_median : 220,
+        coverUrl,
+        subject,
+        openLibraryKey: doc.key
+      });
+    }
   }
   return results;
 }
-async function searchAudiobooksCatalog(query) {
+async function searchAudiobooksCatalog(query, page = 1) {
+  const safePage = Math.max(1, page);
   const cleanQ = query.trim();
-  const luceneQuery = cleanQ ? `collection:librivoxaudio AND (${cleanQ.replace(/[():"]/g, " ")})` : `collection:librivoxaudio AND (portuguese OR portugues OR brasil)`;
+  const luceneQuery = cleanQ
+    ? `collection:librivoxaudio AND (${cleanQ.replace(/[():"]/g, " ")})`
+    : safePage === 1
+      ? `collection:librivoxaudio AND (portuguese OR portugues OR brasil)`
+      : `collection:librivoxaudio`;
   const url = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(
     luceneQuery
-  )}&fl[]=identifier,title,creator,description&rows=24&output=json`;
+  )}&fl[]=identifier,title,creator,description&rows=40&page=${safePage}&output=json`;
   const json = await fetchJsonWithTimeout(url, 6500);
   const docs = json?.response?.docs;
   if (!Array.isArray(docs)) return [];
   return docs.filter((d) => typeof d.identifier === "string" && d.identifier.length > 0).map((d) => {
     const identifier = d.identifier;
     const author = Array.isArray(d.creator) ? d.creator.join(", ") : d.creator || "LibriVox";
-    const rawDesc = Array.isArray(d.description) ? d.description.join(" ") : d.description || "Audiolivro p\xFAblico gratuito (LibriVox / Internet Archive).";
+    const rawDesc = Array.isArray(d.description) ? d.description.join(" ") : d.description || "Audiolivro público gratuito (LibriVox / Internet Archive).";
     const cleanDesc = decodeHtmlEntities(rawDesc);
     return {
       id: `ab-${identifier}`,
@@ -786,14 +1287,14 @@ async function fetchWikisourceBookText(title) {
   const prefixRes = await fetchJsonWithTimeout(
     `https://pt.wikisource.org/w/api.php?action=query&list=prefixsearch&pssearch=${encodeURIComponent(
       `${baseTitle}/`
-    )}&pslimit=25&format=json`,
+    )}&pslimit=100&format=json`,
     5e3
   );
   const subTitles = (prefixRes?.query?.prefixsearch ?? []).map((p) => p.title || "").filter(Boolean);
-  const pagesToFetch = subTitles.length > 0 ? sortChapterTitles(subTitles, baseTitle).slice(0, 6) : [baseTitle];
+  const pagesToFetch = subTitles.length > 0 ? sortChapterTitles(subTitles, baseTitle).slice(0, 40) : [baseTitle];
   const chapters = [];
-  for (let start = 0; start < pagesToFetch.length; start += 2) {
-    const batch = pagesToFetch.slice(start, start + 2);
+  for (let start = 0; start < pagesToFetch.length; start += 4) {
+    const batch = pagesToFetch.slice(start, start + 4);
     const parsedPages = await Promise.all(
       batch.map(
         (pageTitle) => fetchJsonWithTimeout(
@@ -1078,13 +1579,67 @@ function createApiApp() {
   app.get("/api/music/search", async (req, res) => {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     const artist = typeof req.query.artist === "string" ? req.query.artist.trim() : "";
+    const source = typeof req.query.source === "string" ? req.query.source.trim().toLowerCase() : "all";
+    const pageRaw = parseInt(typeof req.query.page === "string" ? req.query.page : "1", 10);
+    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
     const searchTerm = artist || q || "Louvor Gospel Brasil";
-    const [ytTracks, audiusTracks] = await Promise.all([
-      searchYouTubeFullTracks(searchTerm, artist || void 0),
-      !artist && q ? searchAudiusFullTracks(q) : Promise.resolve([])
+
+    const wantYt = source === "all" || source === "youtube";
+    const wantMp3 = source === "all" || source === "mp3";
+    const wantCatalogs = source === "all" || source === "catalogs" || source === "outros";
+
+    const [ytTracks, deezerTracks, itunesTracks, audiusTracks, archiveTracks] = await Promise.all([
+      wantYt ? searchYouTubeFullTracks(searchTerm, artist || void 0, page) : Promise.resolve([]),
+      wantCatalogs ? searchDeezerTracks(searchTerm, page) : Promise.resolve([]),
+      wantCatalogs ? searchItunesTracks(searchTerm, page) : Promise.resolve([]),
+      wantMp3 ? searchAudiusFullTracks(searchTerm, page) : Promise.resolve([]),
+      wantMp3 ? searchArchiveMusicTracks(searchTerm, page) : Promise.resolve([])
     ]);
-    const tracks = [...ytTracks, ...audiusTracks];
-    res.json({ tracks });
+
+    let ordered = [];
+    if (source === "youtube") {
+      ordered = ytTracks;
+    } else if (source === "mp3") {
+      const maxLen = Math.max(audiusTracks.length, archiveTracks.length);
+      for (let i = 0; i < maxLen; i += 1) {
+        if (audiusTracks[i]) ordered.push(audiusTracks[i]);
+        if (archiveTracks[i]) ordered.push(archiveTracks[i]);
+      }
+    } else if (source === "catalogs" || source === "outros") {
+      const maxLen = Math.max(deezerTracks.length, itunesTracks.length);
+      for (let i = 0; i < maxLen; i += 1) {
+        if (deezerTracks[i]) ordered.push(deezerTracks[i]);
+        if (itunesTracks[i]) ordered.push(itunesTracks[i]);
+      }
+    } else {
+      // Top YouTube matches first (like YouTube search), then fair interleaving across YouTube, Deezer, Apple Music, Audius, and Archive
+      ordered.push(...ytTracks.slice(0, 5));
+      const ytRest = ytTracks.slice(5);
+      const maxLen = Math.max(
+        ytRest.length,
+        deezerTracks.length,
+        itunesTracks.length,
+        audiusTracks.length,
+        archiveTracks.length
+      );
+      for (let i = 0; i < maxLen; i += 1) {
+        if (deezerTracks[i]) ordered.push(deezerTracks[i]);
+        if (ytRest[i]) ordered.push(ytRest[i]);
+        if (itunesTracks[i]) ordered.push(itunesTracks[i]);
+        if (audiusTracks[i]) ordered.push(audiusTracks[i]);
+        if (archiveTracks[i]) ordered.push(archiveTracks[i]);
+      }
+    }
+
+    const seenIds = /* @__PURE__ */ new Set();
+    const tracks = [];
+    for (const tr of ordered) {
+      if (!seenIds.has(tr.id)) {
+        seenIds.add(tr.id);
+        tracks.push(tr);
+      }
+    }
+    res.json({ tracks, page, source, hasMore: tracks.length >= 8 });
   });
   app.get("/api/youtube/search", async (req, res) => {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
@@ -1108,8 +1663,10 @@ function createApiApp() {
   app.get("/api/podcast/search", async (req, res) => {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     const category = typeof req.query.category === "string" ? req.query.category.trim().toLowerCase() : "destaques";
-    const shows = await searchPodcastShows(q, category);
-    res.json({ shows });
+    const pageRaw = parseInt(typeof req.query.page === "string" ? req.query.page : "1", 10);
+    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+    const shows = await searchPodcastShows(q, category, page);
+    res.json({ shows, page, hasMore: shows.length >= 20 });
   });
   app.get("/api/podcast/episodes", async (req, res) => {
     let feedUrl = typeof req.query.feedUrl === "string" ? req.query.feedUrl.trim() : "";
@@ -1242,8 +1799,161 @@ function createApiApp() {
   app.get("/api/radio/search", async (req, res) => {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     const tag = typeof req.query.tag === "string" ? req.query.tag.trim().toLowerCase() : "gospel";
-    const stations = await fetchRadioStations(q, tag);
-    res.json({ stations });
+    const scope = typeof req.query.scope === "string" && req.query.scope.toLowerCase() === "global" ? "global" : "br";
+    const state = typeof req.query.state === "string" ? req.query.state.trim() : "";
+    const pageRaw = parseInt(typeof req.query.page === "string" ? req.query.page : "1", 10);
+    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+    const { stations, hasMore } = await fetchRadioStations(q, tag, page, scope, state);
+    res.json({ stations, page, state, hasMore });
+  });
+  app.get("/api/images/search", async (req, res) => {
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const category = typeof req.query.category === "string" ? req.query.category.trim().toLowerCase() : "destaques";
+    const pageRaw = parseInt(typeof req.query.page === "string" ? req.query.page : "1", 10);
+    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+    const IMAGE_CAT_MAP = {
+      destaques: "nature sunrise mountain landscape",
+      natureza: "nature forest waterfall flowers",
+      fe: "church stained glass bible cross",
+      paisagens: "mountain ocean sunset sky",
+      familia: "family home coffee warm",
+      arquitetura: "architecture city bridge",
+      espaco: "galaxy stars earth nebula"
+    };
+    const term = q || IMAGE_CAT_MAP[category] || "nature landscape";
+    const [openverseJson, archiveJson] = await Promise.all([
+      fetchJsonWithTimeout(
+        `https://api.openverse.org/v1/images/?q=${encodeURIComponent(term)}&page_size=36&page=${page}`,
+        6500
+      ),
+      fetchJsonWithTimeout(
+        `https://archive.org/advancedsearch.php?q=${encodeURIComponent(
+          `mediatype:image AND (${term.replace(/[():"]/g, " ")})`
+        )}&fl[]=identifier,title,creator&rows=24&page=${page}&output=json`,
+        5500
+      )
+    ]);
+    const images = [];
+    const seen = /* @__PURE__ */ new Set();
+    if (Array.isArray(openverseJson?.results)) {
+      for (const item of openverseJson.results) {
+        const fullUrl = typeof item.url === "string" ? item.url.trim() : "";
+        if (!fullUrl.startsWith("http") || seen.has(fullUrl)) continue;
+        seen.add(fullUrl);
+        const thumbUrl = typeof item.thumbnail === "string" && item.thumbnail.startsWith("http")
+          ? item.thumbnail
+          : fullUrl;
+        images.push({
+          id: `ov-${item.id || seen.size}`,
+          title: (item.title || term).trim().slice(0, 90),
+          author: (item.creator || "Openverse").trim(),
+          thumbUrl,
+          fullUrl,
+          width: typeof item.width === "number" ? item.width : void 0,
+          height: typeof item.height === "number" ? item.height : void 0,
+          source: "Openverse"
+        });
+      }
+    }
+    if (Array.isArray(archiveJson?.response?.docs)) {
+      for (const doc of archiveJson.response.docs) {
+        const identifier = typeof doc.identifier === "string" ? doc.identifier.trim() : "";
+        if (!identifier) continue;
+        const thumbUrl = `https://archive.org/services/img/${encodeURIComponent(identifier)}`;
+        if (seen.has(thumbUrl)) continue;
+        seen.add(thumbUrl);
+        const creator = Array.isArray(doc.creator) ? doc.creator[0] : doc.creator;
+        images.push({
+          id: `arcimg-${identifier}`,
+          title: String(doc.title || term).trim().slice(0, 90),
+          author: String(creator || "Internet Archive").trim(),
+          thumbUrl,
+          fullUrl: thumbUrl,
+          source: "Archive.org"
+        });
+      }
+    }
+    res.json({ images, page, hasMore: images.length >= 12 });
+  });
+  app.get("/api/media/proxy", (req, res) => {
+    const rawUrl = typeof req.query.url === "string" ? req.query.url.trim() : "";
+    const forceDownload = req.query.download === "1";
+    const filename = typeof req.query.filename === "string" ? req.query.filename.replace(/[^a-zA-Z0-9._-]/g, "_") : "";
+    if (!rawUrl) {
+      res.status(400).json({ error: "Missing media URL" });
+      return;
+    }
+    let parsed;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      res.status(400).json({ error: "Invalid URL" });
+      return;
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:" || isPrivateOrBlockedHost(parsed.hostname)) {
+      res.status(403).json({ error: "Blocked media host" });
+      return;
+    }
+    let upstreamReq = null;
+    let closed = false;
+    const proxyMedia = (targetUrl, redirectsLeft) => {
+      if (closed) return;
+      const client = targetUrl.protocol === "https:" ? https : http;
+      upstreamReq = client.get(
+        targetUrl,
+        {
+          headers: {
+            "User-Agent": "MeuMundoMinhaVida/1.0",
+            Accept: "*/*"
+          },
+          timeout: 2e4
+        },
+        (upstreamRes) => {
+          const status = upstreamRes.statusCode ?? 200;
+          if (status >= 300 && status < 400 && upstreamRes.headers.location && redirectsLeft > 0) {
+            upstreamRes.resume();
+            try {
+              const nextUrl = new URL(upstreamRes.headers.location, targetUrl);
+              if ((nextUrl.protocol === "http:" || nextUrl.protocol === "https:") && !isPrivateOrBlockedHost(nextUrl.hostname)) {
+                proxyMedia(nextUrl, redirectsLeft - 1);
+                return;
+              }
+            } catch {
+            }
+          }
+          if (status >= 400) {
+            upstreamRes.resume();
+            if (!res.headersSent) res.status(502).end();
+            return;
+          }
+          res.status(status);
+          res.setHeader("Content-Type", upstreamRes.headers["content-type"] || "application/octet-stream");
+          if (upstreamRes.headers["content-length"]) {
+            res.setHeader("Content-Length", upstreamRes.headers["content-length"]);
+          }
+          if (forceDownload && filename) {
+            res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+          }
+          res.setHeader("Access-Control-Allow-Origin", "*");
+          upstreamRes.pipe(res);
+          upstreamRes.on("error", () => {
+            if (!res.writableEnded) res.end();
+          });
+        }
+      );
+      upstreamReq.on("timeout", () => {
+        upstreamReq?.destroy();
+        if (!res.headersSent) res.status(504).end();
+      });
+      upstreamReq.on("error", () => {
+        if (!res.headersSent) res.status(502).end();
+      });
+    };
+    req.on("close", () => {
+      closed = true;
+      upstreamReq?.destroy();
+    });
+    proxyMedia(parsed, 5);
   });
   app.get("/api/radio/stream", (req, res) => {
     const rawUrl = typeof req.query.url === "string" ? req.query.url.trim() : "";
@@ -1331,13 +2041,17 @@ function createApiApp() {
   app.get("/api/books/search", async (req, res) => {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     const category = typeof req.query.category === "string" ? req.query.category.trim().toLowerCase() : "destaques";
-    const books = await searchBooksCatalog(q, category);
-    res.json({ books });
+    const pageRaw = parseInt(typeof req.query.page === "string" ? req.query.page : "1", 10);
+    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+    const books = await searchBooksCatalog(q, category, page);
+    res.json({ books, page, hasMore: books.length >= 12 });
   });
   app.get("/api/books/audiobooks", async (req, res) => {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
-    const audiobooks = await searchAudiobooksCatalog(q);
-    res.json({ audiobooks });
+    const pageRaw = parseInt(typeof req.query.page === "string" ? req.query.page : "1", 10);
+    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+    const audiobooks = await searchAudiobooksCatalog(q, page);
+    res.json({ audiobooks, page, hasMore: audiobooks.length >= 12 });
   });
   app.get("/api/books/audiobook-tracks", async (req, res) => {
     const identifier = typeof req.query.identifier === "string" ? req.query.identifier.trim() : "";
@@ -1353,15 +2067,52 @@ function createApiApp() {
     const title = typeof req.query.title === "string" ? req.query.title.trim() : "";
     const author = typeof req.query.author === "string" ? req.query.author.trim() : "";
     const openLibraryKey = typeof req.query.openLibraryKey === "string" ? req.query.openLibraryKey.trim() : "";
+    const textUrl = typeof req.query.textUrl === "string" ? req.query.textUrl.trim() : "";
     if (!title) {
       res.status(400).json({ error: "Missing title", contentText: "" });
       return;
     }
-    const cacheKey = `${title.toLowerCase()}::${author.toLowerCase()}::${openLibraryKey}`;
+    const cacheKey = `${title.toLowerCase()}::${author.toLowerCase()}::${openLibraryKey}::${textUrl}`;
     const cached = bookTextCache.get(cacheKey);
     if (cached) {
       res.json(cached);
       return;
+    }
+    if (textUrl && textUrl.startsWith("http")) {
+      try {
+        const parsedTxt = new URL(textUrl);
+        if (!isPrivateOrBlockedHost(parsedTxt.hostname)) {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 7500);
+          const txtRes = await fetch(parsedTxt.toString(), {
+            signal: controller.signal,
+            headers: { "User-Agent": "MeuMundoMinhaVida/1.0" }
+          });
+          clearTimeout(timer);
+          if (txtRes.ok) {
+            const rawText = (await txtRes.text()).replace(/\r\n/g, "\n").trim();
+            if (rawText.length > 200) {
+              const sliced = rawText.slice(0, 180000);
+              const chunks = sliced.match(/[\s\S]{1,3200}(?:\n|$)/g) || [sliced];
+              const formatted = chunks
+                .slice(0, 60)
+                .map((c, idx) => `# Parte ${idx + 1}\n${c.trim()}`)
+                .join("\n\n---\n\n");
+              const payload = {
+                contentText: formatted,
+                sourceLabel: textUrl.includes("archive.org")
+                  ? "Livro Integral (Internet Archive)"
+                  : "Livro Integral (Project Gutenberg)",
+                isFullPublicText: true
+              };
+              bookTextCache.set(cacheKey, payload);
+              res.json(payload);
+              return;
+            }
+          }
+        }
+      } catch {
+      }
     }
     const wikisourceText = await fetchWikisourceBookText(title);
     if (wikisourceText) {
@@ -1382,7 +2133,7 @@ function createApiApp() {
     if (fallbackText) {
       const payload = {
         contentText: fallbackText,
-        sourceLabel: "Sinopse, cap\xEDtulos e trechos (Open Library / Wikip\xE9dia)",
+        sourceLabel: "Sinopse, capítulos e trechos (Open Library / Wikipédia)",
         isFullPublicText: false
       };
       bookTextCache.set(cacheKey, payload);
@@ -1391,7 +2142,7 @@ function createApiApp() {
     }
     res.json({
       contentText: "",
-      sourceLabel: "Edi\xE7\xE3o manual ou importa\xE7\xE3o .TXT",
+      sourceLabel: "Edição manual ou importação .TXT",
       isFullPublicText: false
     });
   });

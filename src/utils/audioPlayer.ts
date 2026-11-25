@@ -1,3 +1,4 @@
+import { buildOfflineKey, getOfflineMediaBlobUrl } from './offlineMediaStore';
 import { getOrCreateWavUrl } from './wavSynth';
 
 export type PlaybackKind = 'music' | 'podcast' | 'radio';
@@ -101,11 +102,11 @@ class HtmlAudioPlayerEngine {
     this.isPlaying = true;
     const audio = this.ensureAudio();
 
-    // 1. Real Music or Real Podcast episode URL (with automatic proxy fallback on CORS/HTTP)
-    if (options.audioUrl && (options.kind === 'music' || options.kind === 'podcast')) {
-      const rawUrl = options.audioUrl;
-      const proxyUrl = `/api/podcast/audio?url=${encodeURIComponent(rawUrl)}`;
-      let triedProxy = rawUrl.startsWith('http://');
+    const playDirectOrRemoteUrl = (resolvedUrl: string, allowProxy: boolean) => {
+      if (session !== this.activeSession || !this.isPlaying) return;
+      const isLocal = resolvedUrl.startsWith('blob:') || resolvedUrl.startsWith('data:');
+      const proxyUrl = `/api/podcast/audio?url=${encodeURIComponent(resolvedUrl)}`;
+      let triedProxy = !isLocal && resolvedUrl.startsWith('http://');
 
       audio.loop = false;
       audio.volume = this.volume;
@@ -124,7 +125,7 @@ class HtmlAudioPlayerEngine {
 
       const handleFailOrProxy = () => {
         if (session !== this.activeSession || !this.isPlaying) return;
-        if (options.kind === 'podcast' && !triedProxy) {
+        if (allowProxy && !isLocal && !triedProxy) {
           triedProxy = true;
           audio.src = proxyUrl;
           void audio.play().catch(() => {
@@ -138,8 +139,32 @@ class HtmlAudioPlayerEngine {
       };
 
       audio.onerror = handleFailOrProxy;
-      audio.src = triedProxy && options.kind === 'podcast' ? proxyUrl : rawUrl;
+      audio.src = allowProxy && triedProxy ? proxyUrl : resolvedUrl;
       void audio.play().catch(handleFailOrProxy);
+    };
+
+    // 1. Real Music, Podcast, or Recorded Offline Radio (preferring local IndexedDB Blob when downloaded)
+    if (options.audioUrl || options.kind === 'music' || options.kind === 'podcast') {
+      const storeKind =
+        options.kind === 'music' ? 'music' : options.kind === 'podcast' ? 'podcast' : 'radio';
+      const offlineKey = buildOfflineKey(storeKind, options.id);
+
+      void getOfflineMediaBlobUrl(offlineKey).then((blobUrl) => {
+        if (session !== this.activeSession || !this.isPlaying) return;
+        if (blobUrl) {
+          playDirectOrRemoteUrl(blobUrl, false);
+          return;
+        }
+        if (options.audioUrl) {
+          playDirectOrRemoteUrl(options.audioUrl, true);
+          return;
+        }
+        this.playGeneratedWav(options, session);
+        if (options.spokenText) {
+          this.speakText(options.spokenText);
+        }
+      });
+
       return;
     }
 
