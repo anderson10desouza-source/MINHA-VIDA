@@ -2,6 +2,7 @@ import express from "express";
 import { Buffer } from "node:buffer";
 import http from "node:http";
 import https from "node:https";
+import { GoogleGenAI } from "@google/genai";
 import {
   getPublicSupabaseConfig,
   getSupabaseAdminClient,
@@ -1393,6 +1394,82 @@ function createApiApp() {
       sourceLabel: "Edi\xE7\xE3o manual ou importa\xE7\xE3o .TXT",
       isFullPublicText: false
     });
+  });
+  app.post("/api/assistant/chat", async (req, res) => {
+    const apiKey = (process.env.GEMINI_API_KEY || "").trim();
+    if (!apiKey) {
+      res.status(503).json({
+        ok: false,
+        error: "Serviço de inteligência artificial indisponível no servidor (chave não configurada)."
+      });
+      return;
+    }
+
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const message = typeof body.message === "string" ? body.message.trim() : "";
+    if (!message) {
+      res.status(400).json({ ok: false, error: "Envie uma pergunta ou solicitação para o assistente." });
+      return;
+    }
+
+    const history = Array.isArray(body.history) ? body.history.slice(-10) : [];
+    const contextSummary = typeof body.contextSummary === "string" ? body.contextSummary.slice(0, 4000) : "";
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build"
+        }
+      }
+    });
+
+    const systemInstruction = [
+      "Você é o 'Meu Assistente Inteligente' integrado ao aplicativo pessoal 'Meu Mundo Minha Vida'.",
+      "Responda sempre em Português do Brasil (pt-BR), com tom acolhedor, objetivo, prático e organizado.",
+      "Ajude o usuário com planejamento do dia, hábitos e rotinas, reflexões de diário, desempenho pessoal, organização financeira, estudos, metas e bem-estar.",
+      "Quando o usuário pedir análises ou sugestões, use os dados reais do resumo do aplicativo fornecido abaixo sem inventar números que não existam.",
+      "Mantenha as respostas bem estruturadas, fáceis de ler no celular, usando listas curtas quando fizer sentido.",
+      contextSummary ? `\nContexto atual do usuário no aplicativo:\n${contextSummary}` : ""
+    ].filter(Boolean).join("\n");
+
+    const contents = [];
+    for (const item of history) {
+      if (!item || typeof item !== "object") continue;
+      const text = typeof item.text === "string" ? item.text.trim() : "";
+      if (!text) continue;
+      const role = item.role === "assistant" ? "model" : "user";
+      contents.push({ role, parts: [{ text }] });
+    }
+    contents.push({ role: "user", parts: [{ text: message }] });
+
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-4-hydrogen",
+        contents,
+        config: {
+          systemInstruction
+        }
+      });
+      const reply = (response.text || "").trim();
+      if (!reply) {
+        res.status(502).json({
+          ok: false,
+          error: "O assistente não retornou resposta desta vez. Tente reformular sua pergunta."
+        });
+        return;
+      }
+      res.json({ ok: true, reply });
+    } catch (err) {
+      const rawMsg = err instanceof Error ? err.message : "";
+      let friendlyMsg = "Não foi possível obter resposta do assistente agora. Tente novamente em instantes.";
+      if (rawMsg.includes("503") || rawMsg.includes("UNAVAILABLE") || rawMsg.toLowerCase().includes("high demand")) {
+        friendlyMsg = "O serviço de IA está com alta demanda neste momento. Aguarde alguns segundos e tente novamente.";
+      } else if (rawMsg.includes("429") || rawMsg.toLowerCase().includes("quota")) {
+        friendlyMsg = "Limite temporário de solicitações atingido. Tente novamente em alguns instantes.";
+      }
+      res.status(502).json({ ok: false, error: friendlyMsg });
+    }
   });
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });

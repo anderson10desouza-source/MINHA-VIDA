@@ -15,6 +15,10 @@ const NAV_ITEMS: { id: AppTab; label: string; icon: string }[] = [
 ];
 
 const MEDIA_SUB_TABS: AppTab[] = [
+  'assistente',
+  'desempenho',
+  'diario',
+  'habitos',
   'podcast',
   'musica',
   'fotos',

@@ -9,24 +9,29 @@ import {
   saveCloudState,
 } from './lib/supabaseClient';
 import { AgendaModal } from './components/AgendaModal';
+import { AssistantView } from './components/AssistantView';
 import { AuthGate } from './components/AuthGate';
 import { BooksView } from './components/BooksView';
 import { BottomNav } from './components/BottomNav';
 import { CalculatorView } from './components/CalculatorView';
 import { ContactsView } from './components/ContactsView';
+import { CustomizeModal } from './components/CustomizeModal';
 import { DesktopSidebar } from './components/DesktopSidebar';
 import { DevotionalView } from './components/DevotionalView';
 import { ExploreView } from './components/ExploreView';
 import { FavoritesView } from './components/FavoritesView';
 import { FinanceListFilter, FinanceView } from './components/FinanceView';
 import { GoalsView } from './components/GoalsView';
+import { HabitsView } from './components/HabitsView';
 import { HomeView } from './components/HomeView';
 import { InvestmentsView } from './components/InvestmentsView';
+import { JournalView } from './components/JournalView';
 import { MessagesView } from './components/MessagesView';
 import { MoreView } from './components/MoreView';
 import { MusicView } from './components/MusicView';
 import { NotesView } from './components/NotesView';
 import { NowPlayingBar } from './components/NowPlayingBar';
+import { PerformanceView } from './components/PerformanceView';
 import { PhotosView } from './components/PhotosView';
 import { PodcastView } from './components/PodcastView';
 import { ProfileView } from './components/ProfileView';
@@ -50,7 +55,9 @@ import { OfflineBanner, useOnlineStatus } from './components/OfflineModeBar';
 import {
   AgendaCategory,
   AgendaItem,
+  AppCustomizationState,
   AppTab,
+  AssistantMessage,
   BookItem,
   CalcHistoryEntry,
   ChatThread,
@@ -60,8 +67,10 @@ import {
   GoalItem,
   GroceryItem,
   GroceryPurchaseRecord,
+  HabitItem,
   HistoryItem,
   InvestmentAsset,
+  JournalEntry,
   MarketRatesSnapshot,
   MusicTrack,
   NoteEntry,
@@ -84,12 +93,18 @@ import {
   YouTubeVideoItem,
 } from './types';
 import { ambientAudio, RadioStatus } from './utils/audioPlayer';
-import { formatShortDatePtBr, toLocalDateKey } from './utils/dateTime';
+import { formatFullDatePtBr, formatShortDatePtBr, formatTimeHHMM, toLocalDateKey } from './utils/dateTime';
 import {
   deleteDevotionalAudio,
   loadAllDevotionalAudios,
   saveDevotionalAudio,
 } from './utils/devotionalAudioStore';
+import {
+  applyThemePreset,
+  DEFAULT_HOME_SECTION_ORDER,
+  DEFAULT_MENU_ORDER,
+  DEFAULT_VISIBLE_HOME_SECTIONS,
+} from './utils/themePresets';
 
 const STORAGE_KEY = 'meu_mundo_minha_vida_v4';
 
@@ -100,6 +115,14 @@ const DEFAULT_WIDGETS: DailyWidgetsState = {
   showFocusWidget: true,
   showHabitsWidget: true,
   showOfflineWidget: true,
+};
+
+const DEFAULT_CUSTOMIZATION: AppCustomizationState = {
+  themeColor: 'gold',
+  menuOrder: [...DEFAULT_MENU_ORDER],
+  hiddenMenuItems: [],
+  visibleHomeSections: { ...DEFAULT_VISIBLE_HOME_SECTIONS },
+  homeSectionOrder: [...DEFAULT_HOME_SECTION_ORDER],
 };
 
 interface PersistedState {
@@ -137,6 +160,10 @@ interface PersistedState {
   notes?: NoteEntry[];
   goals?: GoalItem[];
   trips?: TripItem[];
+  habits?: HabitItem[];
+  journalEntries?: JournalEntry[];
+  assistantMessages?: AssistantMessage[];
+  customization?: AppCustomizationState;
   manualOffline: boolean;
   isDarkMode: boolean;
 }
@@ -200,6 +227,16 @@ function createBlankPersistedState(email = '', fullName = ''): PersistedState {
     notes: [],
     goals: [],
     trips: [],
+    habits: [],
+    journalEntries: [],
+    assistantMessages: [],
+    customization: {
+      ...DEFAULT_CUSTOMIZATION,
+      menuOrder: [...DEFAULT_CUSTOMIZATION.menuOrder],
+      hiddenMenuItems: [],
+      visibleHomeSections: { ...DEFAULT_CUSTOMIZATION.visibleHomeSections },
+      homeSectionOrder: [...DEFAULT_CUSTOMIZATION.homeSectionOrder],
+    },
     manualOffline: false,
     isDarkMode: true,
   };
@@ -257,6 +294,27 @@ function loadUserCachedState(
         notes: parsed.notes ?? [],
         goals: parsed.goals ?? [],
         trips: parsed.trips ?? [],
+        habits: parsed.habits ?? [],
+        journalEntries: parsed.journalEntries ?? [],
+        assistantMessages: parsed.assistantMessages ?? [],
+        customization: parsed.customization
+          ? {
+              themeColor: parsed.customization.themeColor ?? 'gold',
+              menuOrder: Array.isArray(parsed.customization.menuOrder)
+                ? parsed.customization.menuOrder
+                : [...DEFAULT_MENU_ORDER],
+              hiddenMenuItems: Array.isArray(parsed.customization.hiddenMenuItems)
+                ? parsed.customization.hiddenMenuItems
+                : [],
+              visibleHomeSections: {
+                ...DEFAULT_VISIBLE_HOME_SECTIONS,
+                ...(parsed.customization.visibleHomeSections ?? {}),
+              },
+              homeSectionOrder: Array.isArray(parsed.customization.homeSectionOrder)
+                ? parsed.customization.homeSectionOrder
+                : [...DEFAULT_HOME_SECTION_ORDER],
+            }
+          : blank.customization,
         manualOffline: Boolean(parsed.manualOffline),
         isDarkMode: typeof parsed.isDarkMode === 'boolean' ? parsed.isDarkMode : true,
       };
@@ -353,6 +411,17 @@ export default function App() {
   const [notes, setNotes] = useState<NoteEntry[]>(initial.notes ?? []);
   const [goals, setGoals] = useState<GoalItem[]>(initial.goals ?? []);
   const [trips, setTrips] = useState<TripItem[]>(initial.trips ?? []);
+  const [habits, setHabits] = useState<HabitItem[]>(initial.habits ?? []);
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(
+    initial.journalEntries ?? []
+  );
+  const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>(
+    initial.assistantMessages ?? []
+  );
+  const [customization, setCustomization] = useState<AppCustomizationState>(
+    initial.customization ?? DEFAULT_CUSTOMIZATION
+  );
+  const [isCustomizeOpen, setIsCustomizeOpen] = useState(false);
   const [activeYtVideo, setActiveYtVideo] = useState<YouTubeVideoItem | null>(null);
   const [selectedYtCategory, setSelectedYtCategory] = useState<string>('destaques');
   const [isSearchingYt, setIsSearchingYt] = useState<boolean>(false);
@@ -441,6 +510,10 @@ export default function App() {
       root.classList.remove('dark');
     }
   }, [isDarkMode]);
+
+  useEffect(() => {
+    applyThemePreset(customization.themeColor);
+  }, [customization.themeColor]);
 
   // Load full-length featured tracks, live Brazilian gospel radio stations & real podcasts on startup
   useEffect(() => {
@@ -626,6 +699,10 @@ export default function App() {
         notes,
         goals,
         trips,
+        habits,
+        journalEntries,
+        assistantMessages,
+        customization,
         manualOffline,
         isDarkMode,
       };
@@ -698,6 +775,10 @@ export default function App() {
     notes,
     goals,
     trips,
+    habits,
+    journalEntries,
+    assistantMessages,
+    customization,
     manualOffline,
     isDarkMode,
     cloudSession,
@@ -765,6 +846,27 @@ export default function App() {
       if (Array.isArray(remote.notes)) setNotes(remote.notes);
       if (Array.isArray(remote.goals)) setGoals(remote.goals);
       if (Array.isArray(remote.trips)) setTrips(remote.trips);
+      if (Array.isArray(remote.habits)) setHabits(remote.habits);
+      if (Array.isArray(remote.journalEntries)) setJournalEntries(remote.journalEntries);
+      if (Array.isArray(remote.assistantMessages)) setAssistantMessages(remote.assistantMessages);
+      if (remote.customization) {
+        setCustomization({
+          themeColor: remote.customization.themeColor ?? 'gold',
+          menuOrder: Array.isArray(remote.customization.menuOrder)
+            ? remote.customization.menuOrder
+            : [...DEFAULT_MENU_ORDER],
+          hiddenMenuItems: Array.isArray(remote.customization.hiddenMenuItems)
+            ? remote.customization.hiddenMenuItems
+            : [],
+          visibleHomeSections: {
+            ...DEFAULT_VISIBLE_HOME_SECTIONS,
+            ...(remote.customization.visibleHomeSections ?? {}),
+          },
+          homeSectionOrder: Array.isArray(remote.customization.homeSectionOrder)
+            ? remote.customization.homeSectionOrder
+            : [...DEFAULT_HOME_SECTION_ORDER],
+        });
+      }
       if (typeof remote.manualOffline === 'boolean') setManualOffline(remote.manualOffline);
       if (typeof remote.isDarkMode === 'boolean') setIsDarkMode(remote.isDarkMode);
     } finally {
@@ -1787,6 +1889,10 @@ export default function App() {
     setNotes([]);
     setGoals([]);
     setTrips([]);
+    setHabits([]);
+    setJournalEntries([]);
+    setAssistantMessages([]);
+    setCustomization(blank.customization ?? DEFAULT_CUSTOMIZATION);
     setNotifications([]);
     setManualOffline(false);
     setIsDarkMode(true);
@@ -2193,6 +2299,189 @@ export default function App() {
     setTrips((prev) => prev.filter((t) => t.id !== id));
   };
 
+  const handleAddHabit = (
+    habit: Omit<HabitItem, 'id' | 'completedDates' | 'createdAt'>
+  ) => {
+    const created: HabitItem = {
+      ...habit,
+      id: `hab-${Date.now()}`,
+      completedDates: [],
+      createdAt: new Date().toISOString(),
+    };
+    setHabits((prev) => [created, ...prev]);
+  };
+
+  const handleToggleHabitDate = (habitId: string, dateKey: string) => {
+    setHabits((prev) =>
+      prev.map((h) => {
+        if (h.id !== habitId) return h;
+        const exists = h.completedDates.includes(dateKey);
+        return {
+          ...h,
+          completedDates: exists
+            ? h.completedDates.filter((d) => d !== dateKey)
+            : [...h.completedDates, dateKey],
+        };
+      })
+    );
+  };
+
+  const handleDeleteHabit = (habitId: string) => {
+    setHabits((prev) => prev.filter((h) => h.id !== habitId));
+  };
+
+  const handleAddJournalEntry = (
+    entry: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>
+  ) => {
+    const nowIso = new Date().toISOString();
+    const created: JournalEntry = {
+      ...entry,
+      id: `dia-${Date.now()}`,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+    setJournalEntries((prev) => [created, ...prev]);
+  };
+
+  const handleUpdateJournalEntry = (id: string, patch: Partial<JournalEntry>) => {
+    const nowIso = new Date().toISOString();
+    setJournalEntries((prev) =>
+      prev.map((j) => (j.id === id ? { ...j, ...patch, updatedAt: nowIso } : j))
+    );
+  };
+
+  const handleDeleteJournalEntry = (id: string) => {
+    setJournalEntries((prev) => prev.filter((j) => j.id !== id));
+  };
+
+  const handleAddAssistantMessages = (
+    userMsg: AssistantMessage,
+    assistantMsg: AssistantMessage
+  ) => {
+    setAssistantMessages((prev) => [...prev, userMsg, assistantMsg].slice(-60));
+  };
+
+  const buildAssistantContextSummary = (): string => {
+    const todayKey = toLocalDateKey();
+    const now = new Date();
+    const todayAgenda = agenda
+      .filter((a) => (a.date || todayKey) === todayKey)
+      .map((a) => `${a.time} ${a.title} (${a.completed ? 'concluído' : 'pendente'})`);
+    const habitsSummary = habits.map(
+      (h) =>
+        `${h.title} [${h.period}]: ${h.completedDates.includes(todayKey) ? 'feito hoje' : 'pendente hoje'}`
+    );
+    const pendingTasksList = tasks.filter((t) => !t.completed).map((t) => t.title);
+    const monthPrefix = todayKey.slice(0, 7);
+    const monthTx = financeTransactions.filter((tx) => tx.date.startsWith(monthPrefix));
+    const income = monthTx.filter((t) => t.type === 'receita').reduce((s, t) => s + t.amount, 0);
+    const expense = monthTx.filter((t) => t.type === 'gasto').reduce((s, t) => s + t.amount, 0);
+    return [
+      `Usuário: ${profile.fullName}`,
+      `Data e hora: ${formatFullDatePtBr(now)}, ${formatTimeHHMM(now)}`,
+      `Agenda de hoje (${todayAgenda.length}): ${todayAgenda.slice(0, 8).join('; ') || 'vazia'}`,
+      `Tarefas pendentes (${pendingTasksList.length}/${tasks.length}): ${pendingTasksList.slice(0, 8).join('; ') || 'nenhuma'}`,
+      `Hábitos (${habits.length}): ${habitsSummary.slice(0, 10).join('; ') || 'nenhum cadastrado'}`,
+      `Metas ativas (${goals.length}): ${goals.slice(0, 5).map((g) => `${g.title} (${g.status})`).join('; ') || 'nenhuma'}`,
+      `Diário Pessoal: ${journalEntries.length} registros. Último humor: ${journalEntries[0]?.mood || 'nenhum'}.`,
+      `Finanças no mês: Receitas R$ ${income.toFixed(2)} | Gastos R$ ${expense.toFixed(2)} | Saldo R$ ${(income - expense).toFixed(2)}`,
+      `Leitura acumulada: ${readingMinutes} minutos | Livros: ${books.length} | Notas: ${notes.length}`,
+    ].join('\n');
+  };
+
+  const handleCloudSyncNow = async () => {
+    if (!cloudSession?.access_token || !latestPayloadRef.current) return;
+    setIsCloudSyncing(true);
+    try {
+      const res = await saveCloudState(
+        cloudSession.access_token,
+        latestPayloadRef.current
+      );
+      if (res.ok) {
+        setCloudNeedsSchema(false);
+        if (res.updatedAt) {
+          lastCloudSyncAtRef.current = res.updatedAt;
+          setLastCloudSyncAt(res.updatedAt);
+        }
+        showToast('Dados sincronizados na nuvem!');
+      } else {
+        if (res.needsSchema) setCloudNeedsSchema(true);
+        showToast(res.error || 'Falha ao sincronizar.');
+      }
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  };
+
+  const handleCloudPullNow = async () => {
+    if (!cloudSession?.access_token) return;
+    setIsCloudSyncing(true);
+    try {
+      const fetched = await fetchCloudState(cloudSession.access_token);
+      if (!fetched.ok) {
+        if (fetched.needsSchema) setCloudNeedsSchema(true);
+        showToast(fetched.error || 'Não foi possível baixar da nuvem.');
+        return;
+      }
+      if (!fetched.state) {
+        showToast('Nenhum dado salvo remotamente encontrado para esta conta.');
+        return;
+      }
+      await applyCloudState(fetched.state as Partial<PersistedState>);
+      if (fetched.updatedAt) {
+        lastCloudSyncAtRef.current = fetched.updatedAt;
+        setLastCloudSyncAt(fetched.updatedAt);
+      }
+      showToast('Dados restaurados da nuvem com sucesso!');
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  };
+
+  const handleExportBackup = () => {
+    if (!latestPayloadRef.current) return;
+    const envelope = {
+      app: 'Meu Mundo Minha Vida',
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      data: latestPayloadRef.current,
+    };
+    const blob = new Blob([JSON.stringify(envelope, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `backup-meu-mundo-${toLocalDateKey()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast('Backup .JSON exportado!');
+  };
+
+  const handleImportBackupFile = async (file: File) => {
+    try {
+      const raw = await file.text();
+      const parsed = JSON.parse(raw) as {
+        data?: Partial<PersistedState>;
+      } & Partial<PersistedState>;
+      const payload = parsed.data && typeof parsed.data === 'object' ? parsed.data : parsed;
+      if (!payload || typeof payload !== 'object' || !payload.profile) {
+        showToast('Arquivo de backup inválido.');
+        return;
+      }
+      await applyCloudState(payload);
+      if (cloudSession?.access_token && latestPayloadRef.current) {
+        const merged = { ...latestPayloadRef.current, ...payload };
+        await saveCloudState(cloudSession.access_token, merged);
+      }
+      showToast('Backup restaurado e sincronizado com sucesso!');
+    } catch {
+      showToast('Não foi possível ler este arquivo de backup.');
+    }
+  };
+
   const pendingFinanceExpenses = financeTransactions.filter(
     (tx) => tx.type === 'gasto' && !tx.paid
   );
@@ -2498,6 +2787,9 @@ export default function App() {
         onNavigate={handleNavigate}
         profile={profile}
         unreadMessagesCount={unreadMessagesCount}
+        menuOrder={customization.menuOrder}
+        hiddenMenuItems={customization.hiddenMenuItems}
+        onOpenCustomize={() => setIsCustomizeOpen(true)}
       />
 
       {/* Responsive Content Container */}
@@ -2524,6 +2816,12 @@ export default function App() {
             isDevotionalFavorited={favoriteDevotionalIds.includes(currentDevotional.id)}
             onToggleFavoriteDevotional={handleToggleFavoriteDevotional}
             tasks={tasks}
+            habits={habits}
+            onToggleHabitToday={handleToggleHabitDate}
+            journalEntries={journalEntries}
+            goals={goals}
+            customization={customization}
+            onOpenCustomize={() => setIsCustomizeOpen(true)}
             readingMinutes={readingMinutes}
             onAddReadingMinutes={handleAddReadingMinutes}
             onOpenTasksView={() => handleNavigate('mais')}
@@ -2603,6 +2901,10 @@ export default function App() {
             notes={notes}
             goals={goals}
             trips={trips}
+            journalEntries={journalEntries}
+            habits={habits}
+            menuOrder={customization.menuOrder}
+            hiddenMenuItems={customization.hiddenMenuItems}
             favoriteDevotionalIds={favoriteDevotionalIds}
             favoriteTrackIds={favoriteTrackIds}
             currentTrackId={currentTrack.id}
@@ -2683,6 +2985,14 @@ export default function App() {
                 favoriteRadioIds.length,
               history: history.length,
             }}
+            customization={customization}
+            onOpenCustomize={() => setIsCustomizeOpen(true)}
+            isCloudSyncing={isCloudSyncing}
+            lastCloudSyncAt={lastCloudSyncAt}
+            onCloudSyncNow={handleCloudSyncNow}
+            onCloudPullNow={handleCloudPullNow}
+            onExportBackup={handleExportBackup}
+            onImportBackupFile={handleImportBackupFile}
             onOpenProfile={() => handleNavigate('perfil')}
             onNavigate={handleNavigate}
             unreadMessagesCount={unreadMessagesCount}
@@ -2707,29 +3017,10 @@ export default function App() {
             onCloudSignIn={handleCloudSignIn}
             onCloudSignUp={handleCloudSignUp}
             onCloudSignOut={handleCloudSignOut}
-            onCloudSyncNow={async () => {
-              if (!cloudSession?.access_token || !latestPayloadRef.current) return;
-              setIsCloudSyncing(true);
-              try {
-                const res = await saveCloudState(
-                  cloudSession.access_token,
-                  latestPayloadRef.current
-                );
-                if (res.ok) {
-                  setCloudNeedsSchema(false);
-                  if (res.updatedAt) {
-                    lastCloudSyncAtRef.current = res.updatedAt;
-                    setLastCloudSyncAt(res.updatedAt);
-                  }
-                  showToast('Dados sincronizados no Supabase.');
-                } else {
-                  if (res.needsSchema) setCloudNeedsSchema(true);
-                  showToast(res.error || 'Falha ao sincronizar.');
-                }
-              } finally {
-                setIsCloudSyncing(false);
-              }
-            }}
+            onCloudSyncNow={handleCloudSyncNow}
+            onCloudPullNow={handleCloudPullNow}
+            onExportBackup={handleExportBackup}
+            onImportBackupFile={handleImportBackupFile}
             onCloudUpdatePassword={async (newPassword) => {
               const supabase = await getSupabaseClient();
               if (!supabase) return { ok: false, error: 'Supabase não configurado neste ambiente.' };
@@ -2738,6 +3029,79 @@ export default function App() {
               return { ok: true };
             }}
             onCloudResetPassword={handleCloudResetPassword}
+          />
+        )}
+
+        {activeTab === 'assistente' && (
+          <AssistantView
+            messages={assistantMessages}
+            contextSummary={buildAssistantContextSummary()}
+            userFirstName={profile.fullName.trim().split(' ')[0] || 'Você'}
+            onAddMessages={handleAddAssistantMessages}
+            onClearMessages={() => setAssistantMessages([])}
+            onSaveReplyToNote={(title, content) => {
+              handleAddNote({
+                title,
+                content,
+                category: 'Ideias',
+                tags: ['assistente'],
+                colorAccent: 'gold',
+                pinned: false,
+                favorite: false,
+                archived: false,
+                checklist: [],
+              });
+            }}
+            onSaveReplyToJournal={(title, content) => {
+              handleAddJournalEntry({
+                date: toLocalDateKey(),
+                title,
+                content,
+                mood: 'Reflexivo',
+                tags: ['assistente'],
+              });
+            }}
+            onNavigate={handleNavigate}
+            onBack={handleBackFromSubView}
+            onShowToast={showToast}
+          />
+        )}
+
+        {activeTab === 'desempenho' && (
+          <PerformanceView
+            agenda={agenda}
+            tasks={tasks}
+            habits={habits}
+            journalEntries={journalEntries}
+            goals={goals}
+            books={books}
+            studySubjects={studySubjects}
+            financeTransactions={financeTransactions}
+            readingMinutes={readingMinutes}
+            onNavigate={handleNavigate}
+            onBack={handleBackFromSubView}
+          />
+        )}
+
+        {activeTab === 'diario' && (
+          <JournalView
+            entries={journalEntries}
+            onAddEntry={handleAddJournalEntry}
+            onUpdateEntry={handleUpdateJournalEntry}
+            onDeleteEntry={handleDeleteJournalEntry}
+            onBack={handleBackFromSubView}
+            onShowToast={showToast}
+          />
+        )}
+
+        {activeTab === 'habitos' && (
+          <HabitsView
+            habits={habits}
+            onAddHabit={handleAddHabit}
+            onToggleHabitDate={handleToggleHabitDate}
+            onDeleteHabit={handleDeleteHabit}
+            onBack={handleBackFromSubView}
+            onShowToast={showToast}
           />
         )}
 
@@ -3085,6 +3449,17 @@ export default function App() {
           defaultDate={agendaModalDate}
           onClose={() => setIsAgendaModalOpen(false)}
           onAdd={handleAddAgendaItem}
+        />
+
+        {/* Customize Colors, Icons & Home Screen Modal */}
+        <CustomizeModal
+          isOpen={isCustomizeOpen}
+          customization={customization}
+          isDarkMode={isDarkMode}
+          onToggleDarkMode={() => setIsDarkMode((prev) => !prev)}
+          onUpdateCustomization={setCustomization}
+          onClose={() => setIsCustomizeOpen(false)}
+          onShowToast={showToast}
         />
       </div>
     </div>

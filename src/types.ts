@@ -5,6 +5,10 @@ export type AppTab =
   | 'contatos'
   | 'mais'
   | 'perfil'
+  | 'assistente'
+  | 'desempenho'
+  | 'diario'
+  | 'habitos'
   | 'podcast'
   | 'musica'
   | 'fotos'
@@ -547,6 +551,76 @@ export interface TripItem {
   expenses: TripExpenseItem[];
   createdAt: string;
 }
+
+export type HabitPeriod = 'Manhã' | 'Tarde' | 'Noite' | 'Livre';
+
+export interface HabitItem {
+  id: string;
+  title: string;
+  category: string;
+  period: HabitPeriod;
+  targetPerWeek: number;
+  reminderTime?: string;
+  completedDates: string[]; // YYYY-MM-DD
+  createdAt: string;
+}
+
+export type JournalMood =
+  | 'Grato'
+  | 'Alegre'
+  | 'Em paz'
+  | 'Focado'
+  | 'Reflexivo'
+  | 'Cansado'
+  | 'Desafiado';
+
+export interface JournalEntry {
+  id: string;
+  date: string; // YYYY-MM-DD
+  title: string;
+  content: string;
+  mood: JournalMood;
+  gratitude?: string;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssistantMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  timestamp: string;
+  createdAt: string;
+}
+
+export type ThemeColorId =
+  | 'gold'
+  | 'blue'
+  | 'emerald'
+  | 'violet'
+  | 'rose'
+  | 'cyan';
+
+export type HomeSectionId =
+  | 'assistente'
+  | 'agenda'
+  | 'habitos'
+  | 'desempenho'
+  | 'devocional'
+  | 'diario'
+  | 'resumo'
+  | 'musica'
+  | 'widgets';
+
+export interface AppCustomizationState {
+  themeColor: ThemeColorId;
+  menuOrder: AppTab[];
+  hiddenMenuItems: AppTab[];
+  visibleHomeSections: Record<HomeSectionId, boolean>;
+  homeSectionOrder: HomeSectionId[];
+}
+
 
 
 

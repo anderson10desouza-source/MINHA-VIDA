@@ -25,6 +25,9 @@ interface ProfileViewProps {
   ) => Promise<{ ok: boolean; error?: string; needsEmailConfirm?: boolean }>;
   onCloudSignOut?: () => Promise<void>;
   onCloudSyncNow?: () => Promise<void>;
+  onCloudPullNow?: () => Promise<void>;
+  onExportBackup?: () => void;
+  onImportBackupFile?: (file: File) => Promise<void>;
   onCloudUpdatePassword?: (
     newPassword: string
   ) => Promise<{ ok: boolean; error?: string }>;
@@ -47,6 +50,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onCloudSignUp,
   onCloudSignOut,
   onCloudSyncNow,
+  onCloudPullNow,
+  onExportBackup,
+  onImportBackupFile,
   onCloudUpdatePassword,
   onCloudResetPassword,
 }) => {
@@ -71,6 +77,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [authInfo, setAuthInfo] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const backupInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setFullName(profile.fullName);
@@ -420,19 +427,77 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   </button>
                 </div>
 
-                <button
-                  type="button"
-                  disabled={isCloudSyncing}
-                  onClick={() => {
-                    void onCloudSyncNow?.();
-                  }}
-                  className="w-full min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-full bg-light-surface-container-high dark:bg-dark-surface-container-high text-light-on-surface dark:text-dark-on-surface font-body text-label-md px-4 py-2 hover:opacity-90 disabled:opacity-60 transition-opacity"
-                >
-                  <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
-                    sync
-                  </span>
-                  {isCloudSyncing ? 'Sincronizando...' : 'Sincronizar agora'}
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    disabled={isCloudSyncing}
+                    onClick={() => {
+                      void onCloudSyncNow?.();
+                    }}
+                    className="min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-full bg-light-surface-container-high dark:bg-dark-surface-container-high text-light-on-surface dark:text-dark-on-surface font-body text-label-md px-3 py-2 hover:opacity-90 disabled:opacity-60 transition-opacity"
+                  >
+                    <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                      cloud_upload
+                    </span>
+                    {isCloudSyncing ? 'Salvando...' : 'Salvar Nuvem'}
+                  </button>
+
+                  {onCloudPullNow && (
+                    <button
+                      type="button"
+                      disabled={isCloudSyncing}
+                      onClick={() => {
+                        void onCloudPullNow();
+                      }}
+                      className="min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-full bg-light-surface-container-high dark:bg-dark-surface-container-high text-light-on-surface dark:text-dark-on-surface font-body text-label-md px-3 py-2 hover:opacity-90 disabled:opacity-60 transition-opacity"
+                    >
+                      <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                        cloud_download
+                      </span>
+                      Baixar Nuvem
+                    </button>
+                  )}
+                </div>
+
+                {(onExportBackup || onImportBackupFile) && (
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-light-outline-variant dark:border-dark-outline-variant">
+                    {onExportBackup && (
+                      <button
+                        type="button"
+                        onClick={onExportBackup}
+                        className="min-h-[38px] inline-flex items-center justify-center gap-1.5 rounded-md border border-light-outline-variant dark:border-dark-outline-variant font-body text-label-sm text-light-on-surface dark:text-dark-on-surface px-3 py-1.5 hover:border-light-primary dark:hover:border-dark-primary"
+                      >
+                        <span className="material-symbols-outlined text-[17px] text-cat-emerald">
+                          download
+                        </span>
+                        Exportar Backup
+                      </button>
+                    )}
+                    {onImportBackupFile && (
+                      <button
+                        type="button"
+                        onClick={() => backupInputRef.current?.click()}
+                        className="min-h-[38px] inline-flex items-center justify-center gap-1.5 rounded-md border border-light-outline-variant dark:border-dark-outline-variant font-body text-label-sm text-light-on-surface dark:text-dark-on-surface px-3 py-1.5 hover:border-light-primary dark:hover:border-dark-primary"
+                      >
+                        <span className="material-symbols-outlined text-[17px] text-accent-gold">
+                          upload_file
+                        </span>
+                        Importar Backup
+                      </button>
+                    )}
+                    <input
+                      ref={backupInputRef}
+                      type="file"
+                      accept=".json,application/json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (file && onImportBackupFile) void onImportBackupFile(file);
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             )}
 

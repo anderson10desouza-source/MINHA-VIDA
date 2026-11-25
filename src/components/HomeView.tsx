@@ -2,10 +2,15 @@ import React, { useEffect, useState } from 'react';
 import {
   AgendaCategory,
   AgendaItem,
+  AppCustomizationState,
   AppTab,
   DailyWidgetsState,
   DailyWordEntry,
   DevotionalItem,
+  GoalItem,
+  HabitItem,
+  HomeSectionId,
+  JournalEntry,
   MusicTrack,
   NotificationItem,
   TaskItem,
@@ -22,6 +27,7 @@ import {
   toLocalDateKey,
   WEEKDAY_SHORT_PT,
 } from '../utils/dateTime';
+import { DEFAULT_HOME_SECTION_ORDER } from '../utils/themePresets';
 import { MediaMenuStrip } from './MediaMenuStrip';
 import { PWAInstallBanner } from './OfflineModeBar';
 import { ResilientImage } from './ResilientImage';
@@ -39,6 +45,12 @@ interface HomeViewProps {
   isDevotionalFavorited: boolean;
   onToggleFavoriteDevotional: (id: string) => void;
   tasks: TaskItem[];
+  habits: HabitItem[];
+  onToggleHabitToday: (habitId: string, dateKey: string) => void;
+  journalEntries: JournalEntry[];
+  goals: GoalItem[];
+  customization: AppCustomizationState;
+  onOpenCustomize: () => void;
   readingMinutes: number;
   onAddReadingMinutes: (minutes: number) => void;
   onOpenTasksView: () => void;
@@ -102,6 +114,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
   isDevotionalFavorited,
   onToggleFavoriteDevotional,
   tasks,
+  habits,
+  onToggleHabitToday,
+  journalEntries,
+  goals,
+  customization,
+  onOpenCustomize,
   readingMinutes,
   onAddReadingMinutes,
   onOpenTasksView,
@@ -183,9 +201,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const agendaDatesWithEvents = new Set(
-    agenda.map((item) => item.date || todayKey)
-  );
+  const agendaDatesWithEvents = new Set(agenda.map((item) => item.date || todayKey));
   const selectedDayAgenda = agenda.filter(
     (item) => (item.date || todayKey) === selectedDate
   );
@@ -199,9 +215,19 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const totalActions = totalTasksCount + selectedDayAgenda.length;
   const doneActions = completedTasksCount + completedAgendaCount;
   const focusPercent =
-    totalTasksCount === 8 && doneActions === 5
-      ? 87
-      : Math.min(100, Math.max(25, Math.round(45 + (doneActions / Math.max(1, totalActions)) * 55)));
+    totalActions === 0
+      ? 0
+      : Math.min(100, Math.round((doneActions / totalActions) * 100));
+
+  const habitsDoneToday = habits.filter((h) => h.completedDates.includes(todayKey)).length;
+  const habitsTodayPct =
+    habits.length > 0 ? Math.round((habitsDoneToday / habits.length) * 100) : 0;
+
+  const completedGoals = goals.filter((g) => g.status === 'concluida').length;
+  const latestJournal = [...journalEntries].sort((a, b) =>
+    b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)
+  )[0];
+  const hasTodayJournal = journalEntries.some((j) => j.date === todayKey);
 
   const calendarCells = getMonthCalendarCells(calendarYear, calendarMonth);
 
@@ -242,191 +268,54 @@ export const HomeView: React.FC<HomeViewProps> = ({
     }
   };
 
-  return (
-    <div className="flex flex-col">
-      {/* Top Greeting Header */}
-      <header className="px-4 lg:px-8 pt-6 pb-3 flex items-start justify-between gap-3 relative">
-        <div className="flex flex-col gap-1 flex-1 min-w-0">
-          <h1 className="font-headline text-headline-lg lg:text-[28px] lg:leading-[34px] text-light-on-surface dark:text-dark-on-surface text-balance">
-            {greeting},{' '}
-            <span className="text-light-primary dark:text-dark-primary">{firstName}!</span>
-          </h1>
-          <p className="font-body text-label-sm text-light-primary dark:text-dark-primary tabular-nums">
-            {currentFullDateLabel} · {currentTimeLabel}
-          </p>
-          <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant text-pretty">
-            “Tudo posso naquele que me fortalece.”
-            <br />
-            <span className="text-light-on-surface-variant dark:text-dark-on-surface-variant">
-              – Filipenses 4:13
-            </span>
-          </p>
-        </div>
+  const orderedHomeSections: HomeSectionId[] = [
+    ...customization.homeSectionOrder.filter((id) =>
+      DEFAULT_HOME_SECTION_ORDER.includes(id)
+    ),
+    ...DEFAULT_HOME_SECTION_ORDER.filter(
+      (id) => !customization.homeSectionOrder.includes(id)
+    ),
+  ].filter((id) => customization.visibleHomeSections[id] ?? true);
 
-        <div className="flex items-start gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={onOpenProfile}
-            aria-label={`Abrir perfil de ${firstName}`}
-            title="Perfil e Dados Pessoais"
-            className="w-16 h-16 rounded-full border-2 border-accent-gold overflow-hidden bg-light-surface-container dark:bg-dark-surface-container shrink-0 transition-transform duration-150 hover:scale-[1.03] active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-light-primary dark:focus-visible:outline-dark-primary"
+  const renderSection = (sectionId: HomeSectionId) => {
+    switch (sectionId) {
+      case 'assistente':
+        return (
+          <article
+            key="assistente"
+            className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-primary/40 dark:border-dark-primary/40 p-4 flex flex-col justify-between gap-3"
           >
-            <ResilientImage
-              src={profile.avatarUrl}
-              alt={profile.fullName}
-              fallbackType="avatar"
-              initials={initials}
-              className="w-full h-full object-cover"
-            />
-          </button>
-
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowNotifications((prev) => !prev)}
-              aria-label="Notificações"
-              aria-expanded={showNotifications}
-              className="relative inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded-full text-light-on-surface dark:text-dark-on-surface hover:bg-light-surface-container-high dark:hover:bg-dark-surface-container-high transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-light-primary dark:focus-visible:outline-dark-primary"
-            >
-              <span className="material-symbols-outlined text-[20px]">notifications</span>
-              {unreadCount > 0 && (
-                <span className="absolute top-2 right-2 min-w-[16px] h-4 px-1 rounded-full bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary font-mono text-[10px] leading-4 font-semibold text-center tabular-nums">
-                  {unreadCount}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5 min-w-0">
+                <span className="material-symbols-outlined text-[22px] text-light-primary dark:text-dark-primary shrink-0 mt-0.5">
+                  auto_awesome
                 </span>
-              )}
-            </button>
-
-            {showNotifications && (
-              <div
-                role="region"
-                aria-label="Central de notificações"
-                className="absolute right-0 mt-2 w-80 sm:w-96 rounded-lg bg-light-surface-container-lowest dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant shadow-xl p-4 z-30 flex flex-col gap-3 max-h-[75vh] overflow-y-auto"
-              >
-                <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
                   <h2 className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface">
-                    Notificações Úteis
+                    Meu Assistente Inteligente
                   </h2>
-                  {unreadCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={onMarkAllRead}
-                      className="font-body text-body-sm text-light-primary dark:text-dark-primary hover:underline whitespace-nowrap"
-                    >
-                      Marcar lidas
-                    </button>
-                  )}
-                </div>
-
-                {onTriggerBrowserReminder && (
-                  <button
-                    type="button"
-                    onClick={onTriggerBrowserReminder}
-                    className="w-full min-h-[36px] inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md bg-light-surface-container dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant font-body text-body-sm text-light-primary dark:text-dark-primary hover:border-light-primary dark:hover:border-dark-primary transition-colors"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">
-                      notifications_active
-                    </span>
-                    <span>Ativar e testar lembrete no navegador</span>
-                  </button>
-                )}
-
-                {notifications.length === 0 ? (
-                  <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant py-3 text-center">
-                    Tudo em dia por aqui!
+                  <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
+                    Organize seu dia, analise desempenho, receba ideias para hábitos, diário e finanças.
                   </p>
-                ) : (
-                  <ul className="flex flex-col divide-y divide-light-outline-variant dark:divide-dark-outline-variant">
-                    {notifications.map((notif) => (
-                      <li key={notif.id} className="py-2.5 first:pt-0 last:pb-0 flex flex-col gap-1.5">
-                        <div className="flex items-start justify-between gap-2">
-                          <p
-                            className={`font-body text-body-sm ${
-                              notif.read
-                                ? 'text-light-on-surface-variant dark:text-dark-on-surface-variant'
-                                : 'text-light-on-surface dark:text-dark-on-surface font-medium'
-                            }`}
-                          >
-                            {notif.title}
-                          </p>
-                          {onDismissNotification && (
-                            <button
-                              type="button"
-                              onClick={() => onDismissNotification(notif.id)}
-                              aria-label="Dispensar notificação"
-                              className="text-light-on-surface-variant dark:text-dark-on-surface-variant hover:text-light-error dark:hover:text-dark-error shrink-0"
-                            >
-                              <span className="material-symbols-outlined text-[16px]">close</span>
-                            </button>
-                          )}
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-mono text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant tabular-nums">
-                            {notif.time}
-                          </span>
-                          {notif.targetTab && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setShowNotifications(false);
-                                if (onOpenNotification) {
-                                  onOpenNotification(notif);
-                                } else {
-                                  onNavigate(notif.targetTab!);
-                                }
-                              }}
-                              className="font-body text-label-sm text-light-primary dark:text-dark-primary hover:underline"
-                            >
-                              {notif.actionLabel || 'Abrir'}
-                            </button>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                </div>
               </div>
-            )}
-          </div>
-        </div>
-      </header>
+              <button
+                type="button"
+                onClick={() => onNavigate('assistente')}
+                className="min-h-[38px] px-4 py-1.5 rounded-full bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary font-body text-label-md shrink-0"
+              >
+                Conversar
+              </button>
+            </div>
+          </article>
+        );
 
-      <PWAInstallBanner />
-
-      {/* Quick Global Search Bar -> Opens Busca e Filtro */}
-      <div className="px-4 lg:px-8 pb-2">
-        <button
-          type="button"
-          onClick={() => onNavigate('explorar')}
-          className="w-full min-h-[42px] rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant hover:border-light-primary/70 dark:hover:border-dark-primary/70 px-3.5 py-2 flex items-center justify-between gap-2 text-left transition-colors"
-        >
-          <span className="flex items-center gap-2.5 min-w-0">
-            <span className="material-symbols-outlined text-[19px] text-light-on-surface-variant dark:text-dark-on-surface-variant">
-              search
-            </span>
-            <span className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant truncate">
-              Buscar músicas, podcasts, rádios, devocionais...
-            </span>
-          </span>
-          <span className="font-body text-label-sm text-light-primary dark:text-dark-primary whitespace-nowrap">
-            Filtrar
-          </span>
-        </button>
-      </div>
-
-      {/* 6-Item Content & Media Menu Strip (Podcast, Música, Fotos, Mensagem, Devocional, Rádio) */}
-      <MediaMenuStrip
-        activeTab="inicio"
-        onNavigate={onNavigate}
-        variant="strip"
-        unreadMessagesCount={unreadMessagesCount}
-      />
-
-      {/* Main Dashboard Content */}
-      <main className="px-4 lg:px-8 pb-28 lg:pb-12 grid grid-cols-1 lg:grid-cols-12 gap-3 lg:gap-5 items-start">
-        {/* Left Column on Desktop: Minha Agenda + Música em destaque */}
-        <div className="lg:col-span-7 flex flex-col gap-3 lg:gap-5">
-          {/* Card 1: Minha Agenda */}
-          <article className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-4 flex flex-col gap-3">
+      case 'agenda':
+        return (
+          <article
+            key="agenda"
+            className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-4 flex flex-col gap-3"
+          >
             <header className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <span
@@ -657,80 +546,226 @@ export const HomeView: React.FC<HomeViewProps> = ({
               )}
             </div>
           </article>
+        );
 
-          {/* Card 4: Música em destaque */}
-          <article className="order-4 lg:order-2 rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-3 flex flex-col gap-2.5">
-            <div className="flex items-center justify-between gap-3">
+      case 'habitos':
+        return (
+          <article
+            key="habitos"
+            className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-4 flex flex-col gap-3"
+          >
+            <header className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="material-symbols-outlined text-[20px] text-cat-emerald">
+                  repeat
+                </span>
+                <h2 className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface truncate">
+                  Hábitos e Rotinas
+                </h2>
+              </div>
               <button
                 type="button"
-                onClick={() => onNavigate('musica')}
-                className="flex items-center gap-3 min-w-0 flex-1 text-left rounded-md focus-visible:outline-2 focus-visible:outline-light-primary dark:focus-visible:outline-dark-primary"
+                onClick={() => onNavigate('habitos')}
+                className="font-body text-body-sm text-light-primary dark:text-dark-primary hover:underline whitespace-nowrap"
               >
-                <ResilientImage
-                  src={currentTrack.coverUrl}
-                  alt={`Capa do álbum ${currentTrack.artist}`}
-                  fallbackType="album"
-                  className="w-14 h-14 rounded-md object-cover shrink-0 border border-light-outline-variant dark:border-dark-outline-variant"
-                />
-                <div className="flex flex-col min-w-0">
-                  <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
-                    Música em destaque
-                  </span>
-                  <h3 className="font-body text-label-lg text-light-on-surface dark:text-dark-on-surface truncate">
-                    {currentTrack.title}
-                  </h3>
-                  <span className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant truncate">
-                    {currentTrack.artist}
-                  </span>
-                </div>
+                Gerenciar ({habitsDoneToday}/{habits.length})
               </button>
+            </header>
 
-              <div className="flex items-center gap-1 shrink-0">
+            {habits.length === 0 ? (
+              <div className="flex items-center justify-between gap-3 py-1">
+                <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
+                  Crie hábitos diários de manhã, tarde e noite para acompanhar aqui.
+                </p>
                 <button
                   type="button"
-                  onClick={onNextTrack}
-                  aria-label="Próxima música"
-                  className="inline-flex items-center justify-center min-w-[40px] min-h-[40px] rounded-full text-light-on-surface-variant dark:text-dark-on-surface-variant hover:bg-light-surface-container-high dark:hover:bg-dark-surface-container-high transition-colors"
+                  onClick={() => onNavigate('habitos')}
+                  className="px-3 py-1.5 rounded-full bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary font-body text-label-sm whitespace-nowrap"
                 >
-                  <span className="material-symbols-outlined text-[20px]">skip_next</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={onTogglePlay}
-                  aria-label={isPlaying ? 'Pausar música' : 'Reproduzir música'}
-                  aria-pressed={isPlaying}
-                  className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-light-primary-container dark:bg-dark-primary-container text-light-on-primary-container dark:text-dark-on-primary shrink-0 transition-transform duration-150 hover:scale-105 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-light-primary dark:focus-visible:outline-dark-primary"
-                >
-                  <span className="material-symbols-outlined material-symbols-filled text-[22px]">
-                    {isPlaying ? 'pause' : 'play_arrow'}
-                  </span>
+                  Criar hábito
                 </button>
               </div>
-            </div>
-
-            {isPlaying && (
-              <div className="flex items-center gap-2 pt-0.5">
-                <span className="font-mono text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant tabular-nums">
-                  {formatDuration(Math.floor(playbackProgress * currentTrack.durationSeconds))}
-                </span>
-                <div className="flex-1 h-1.5 rounded-full bg-light-surface-container-high dark:bg-dark-surface-container-highest overflow-hidden">
+            ) : (
+              <div className="flex flex-col gap-2">
+                <div className="w-full h-1.5 rounded-full bg-light-surface-container-highest dark:bg-dark-surface-container-highest overflow-hidden">
                   <div
-                    className="h-full bg-light-primary dark:bg-dark-primary transition-all duration-300"
-                    style={{ width: `${Math.min(100, Math.round(playbackProgress * 100))}%` }}
+                    className="h-full bg-cat-emerald transition-all duration-300"
+                    style={{ width: `${habitsTodayPct}%` }}
                   />
                 </div>
-                <span className="font-mono text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant tabular-nums">
-                  {formatDuration(currentTrack.durationSeconds)}
-                </span>
+                <ul className="flex flex-col gap-1">
+                  {habits.slice(0, 4).map((habit) => {
+                    const done = habit.completedDates.includes(todayKey);
+                    return (
+                      <li key={habit.id}>
+                        <button
+                          type="button"
+                          onClick={() => onToggleHabitToday(habit.id, todayKey)}
+                          className="w-full min-h-[38px] flex items-center justify-between gap-2 rounded-md px-2 py-1 hover:bg-light-surface-container dark:hover:bg-dark-surface-container text-left"
+                        >
+                          <span className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={`material-symbols-outlined text-[19px] shrink-0 ${
+                                done
+                                  ? 'material-symbols-filled text-cat-emerald'
+                                  : 'text-light-on-surface-variant dark:text-dark-on-surface-variant'
+                              }`}
+                            >
+                              {done ? 'check_circle' : 'radio_button_unchecked'}
+                            </span>
+                            <span
+                              className={`font-body text-body-sm truncate ${
+                                done
+                                  ? 'line-through opacity-60 text-light-on-surface-variant dark:text-dark-on-surface-variant'
+                                  : 'text-light-on-surface dark:text-dark-on-surface'
+                              }`}
+                            >
+                              {habit.title}
+                            </span>
+                          </span>
+                          <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant shrink-0">
+                            {habit.period}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             )}
           </article>
-        </div>
+        );
 
-        {/* Right Column on Desktop: Devocional do Dia + Resumo do Dia */}
-        <div className="lg:col-span-5 flex flex-col gap-3 lg:gap-5">
-          {/* Card 2: Devocional do Dia */}
-          <article className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-4 flex flex-col gap-2.5">
+      case 'desempenho':
+        return (
+          <article
+            key="desempenho"
+            className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-4 flex flex-col gap-3"
+          >
+            <header className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="material-symbols-outlined text-[20px] text-light-primary dark:text-dark-primary">
+                  insights
+                </span>
+                <h2 className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface truncate">
+                  Meu Painel de Desempenho
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigate('desempenho')}
+                className="font-body text-body-sm text-light-primary dark:text-dark-primary hover:underline whitespace-nowrap"
+              >
+                Abrir painel
+              </button>
+            </header>
+
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => onNavigate('desempenho')}
+                className="rounded-md bg-light-surface-container dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant p-2.5 text-center"
+              >
+                <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant block">
+                  Hábitos hoje
+                </span>
+                <span className="font-headline text-title-md text-cat-emerald tabular-nums">
+                  {habitsTodayPct}%
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('desempenho')}
+                className="rounded-md bg-light-surface-container dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant p-2.5 text-center"
+              >
+                <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant block">
+                  Foco do dia
+                </span>
+                <span className="font-headline text-title-md text-light-primary dark:text-dark-primary tabular-nums">
+                  {focusPercent}%
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('metas')}
+                className="rounded-md bg-light-surface-container dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant p-2.5 text-center"
+              >
+                <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant block">
+                  Metas
+                </span>
+                <span className="font-headline text-title-md text-cat-blue tabular-nums">
+                  {completedGoals}/{goals.length}
+                </span>
+              </button>
+            </div>
+          </article>
+        );
+
+      case 'diario':
+        return (
+          <article
+            key="diario"
+            className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-4 flex flex-col gap-2.5"
+          >
+            <header className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="material-symbols-outlined text-[20px] text-accent-gold">
+                  book_2
+                </span>
+                <h2 className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface truncate">
+                  Diário Pessoal
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigate('diario')}
+                className="font-body text-body-sm text-light-primary dark:text-dark-primary hover:underline whitespace-nowrap"
+              >
+                {hasTodayJournal ? 'Ver diário' : 'Escrever hoje'}
+              </button>
+            </header>
+
+            {latestJournal ? (
+              <button
+                type="button"
+                onClick={() => onNavigate('diario')}
+                className="rounded-md bg-light-surface-container dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant p-3 text-left flex flex-col gap-1 hover:border-light-primary dark:hover:border-dark-primary transition-colors"
+              >
+                <span className="font-mono text-label-sm text-accent-gold">
+                  {formatShortDatePtBr(latestJournal.date)} · {latestJournal.mood}
+                </span>
+                <span className="font-headline text-label-lg text-light-on-surface dark:text-dark-on-surface truncate">
+                  {latestJournal.title}
+                </span>
+                {latestJournal.content && (
+                  <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant line-clamp-2">
+                    {latestJournal.content}
+                  </p>
+                )}
+              </button>
+            ) : (
+              <div className="flex items-center justify-between gap-3 py-1">
+                <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
+                  Registre seu humor, pensamentos e motivos de gratidão do dia.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('diario')}
+                  className="px-3 py-1.5 rounded-full bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary font-body text-label-sm whitespace-nowrap"
+                >
+                  Abrir diário
+                </button>
+              </div>
+            )}
+          </article>
+        );
+
+      case 'devocional':
+        return (
+          <article
+            key="devocional"
+            className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-4 flex flex-col gap-2.5"
+          >
             <header className="flex items-center justify-between gap-2">
               <button
                 type="button"
@@ -842,9 +877,14 @@ export const HomeView: React.FC<HomeViewProps> = ({
               )}
             </div>
           </article>
+        );
 
-          {/* Card 3: Resumo do Dia */}
-          <article className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-4 flex flex-col gap-3">
+      case 'resumo':
+        return (
+          <article
+            key="resumo"
+            className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-4 flex flex-col gap-3"
+          >
             <header className="flex items-center justify-between">
               <h2 className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface">
                 Resumo do Dia
@@ -933,27 +973,315 @@ export const HomeView: React.FC<HomeViewProps> = ({
               </div>
             </div>
           </article>
+        );
+
+      case 'musica':
+        return (
+          <article
+            key="musica"
+            className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-3 flex flex-col gap-2.5"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => onNavigate('musica')}
+                className="flex items-center gap-3 min-w-0 flex-1 text-left rounded-md focus-visible:outline-2 focus-visible:outline-light-primary dark:focus-visible:outline-dark-primary"
+              >
+                <ResilientImage
+                  src={currentTrack.coverUrl}
+                  alt={`Capa do álbum ${currentTrack.artist}`}
+                  fallbackType="album"
+                  className="w-14 h-14 rounded-md object-cover shrink-0 border border-light-outline-variant dark:border-dark-outline-variant"
+                />
+                <div className="flex flex-col min-w-0">
+                  <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
+                    Música em destaque
+                  </span>
+                  <h3 className="font-body text-label-lg text-light-on-surface dark:text-dark-on-surface truncate">
+                    {currentTrack.title}
+                  </h3>
+                  <span className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant truncate">
+                    {currentTrack.artist}
+                  </span>
+                </div>
+              </button>
+
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={onNextTrack}
+                  aria-label="Próxima música"
+                  className="inline-flex items-center justify-center min-w-[40px] min-h-[40px] rounded-full text-light-on-surface-variant dark:text-dark-on-surface-variant hover:bg-light-surface-container-high dark:hover:bg-dark-surface-container-high transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[20px]">skip_next</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onTogglePlay}
+                  aria-label={isPlaying ? 'Pausar música' : 'Reproduzir música'}
+                  aria-pressed={isPlaying}
+                  className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-light-primary-container dark:bg-dark-primary-container text-light-on-primary-container dark:text-dark-on-primary shrink-0 transition-transform duration-150 hover:scale-105 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-light-primary dark:focus-visible:outline-dark-primary"
+                >
+                  <span className="material-symbols-outlined material-symbols-filled text-[22px]">
+                    {isPlaying ? 'pause' : 'play_arrow'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {isPlaying && (
+              <div className="flex items-center gap-2 pt-0.5">
+                <span className="font-mono text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant tabular-nums">
+                  {formatDuration(Math.floor(playbackProgress * currentTrack.durationSeconds))}
+                </span>
+                <div className="flex-1 h-1.5 rounded-full bg-light-surface-container-high dark:bg-dark-surface-container-highest overflow-hidden">
+                  <div
+                    className="h-full bg-light-primary dark:bg-dark-primary transition-all duration-300"
+                    style={{ width: `${Math.min(100, Math.round(playbackProgress * 100))}%` }}
+                  />
+                </div>
+                <span className="font-mono text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant tabular-nums">
+                  {formatDuration(currentTrack.durationSeconds)}
+                </span>
+              </div>
+            )}
+          </article>
+        );
+
+      case 'widgets':
+        return (
+          <div key="widgets" className="lg:col-span-2">
+            <UsefulWidgets
+              widgets={widgets}
+              onUpdateWidgets={onUpdateWidgets}
+              onAddFocusMinutes={onAddReadingMinutes}
+              isOffline={isOffline}
+              isManualOffline={isManualOffline}
+              onToggleManualOffline={onToggleManualOffline}
+              favoritesCount={favoritesCount}
+              historyCount={historyCount}
+              personalDevotionalsCount={personalDevotionalsCount}
+              isRadioPlaying={isRadioPlaying}
+              activeRadioName={activeRadioName}
+              onQuickPlayRadio={onQuickPlayRadio}
+              onNavigate={onNavigate}
+              onShowToast={onShowToast}
+            />
+          </div>
+        );
+    }
+  };
+
+  return (
+    <div className="flex flex-col">
+      {/* Top Greeting Header */}
+      <header className="px-4 lg:px-8 pt-6 pb-3 flex items-start justify-between gap-3 relative">
+        <div className="flex flex-col gap-1 flex-1 min-w-0">
+          <h1 className="font-headline text-headline-lg lg:text-[28px] lg:leading-[34px] text-light-on-surface dark:text-dark-on-surface text-balance">
+            {greeting},{' '}
+            <span className="text-light-primary dark:text-dark-primary">{firstName}!</span>
+          </h1>
+          <p className="font-body text-label-sm text-light-primary dark:text-dark-primary tabular-nums">
+            {currentFullDateLabel} · {currentTimeLabel}
+          </p>
+          <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant text-pretty">
+            “Tudo posso naquele que me fortalece.”
+            <br />
+            <span className="text-light-on-surface-variant dark:text-dark-on-surface-variant">
+              – Filipenses 4:13
+            </span>
+          </p>
         </div>
 
-        {/* Useful Interactive Widgets Row */}
-        <div className="lg:col-span-12">
-          <UsefulWidgets
-            widgets={widgets}
-            onUpdateWidgets={onUpdateWidgets}
-            onAddFocusMinutes={onAddReadingMinutes}
-            isOffline={isOffline}
-            isManualOffline={isManualOffline}
-            onToggleManualOffline={onToggleManualOffline}
-            favoritesCount={favoritesCount}
-            historyCount={historyCount}
-            personalDevotionalsCount={personalDevotionalsCount}
-            isRadioPlaying={isRadioPlaying}
-            activeRadioName={activeRadioName}
-            onQuickPlayRadio={onQuickPlayRadio}
-            onNavigate={onNavigate}
-            onShowToast={onShowToast}
-          />
+        <div className="flex items-start gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={onOpenCustomize}
+            aria-label="Personalizar cores, ícones e tela principal"
+            title="Personalizar cores e tela inicial"
+            className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded-full text-light-on-surface dark:text-dark-on-surface hover:bg-light-surface-container-high dark:hover:bg-dark-surface-container-high transition-colors duration-150"
+          >
+            <span className="material-symbols-outlined text-[20px]">palette</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenProfile}
+            aria-label={`Abrir perfil de ${firstName}`}
+            title="Perfil e Dados Pessoais"
+            className="w-16 h-16 rounded-full border-2 border-accent-gold overflow-hidden bg-light-surface-container dark:bg-dark-surface-container shrink-0 transition-transform duration-150 hover:scale-[1.03] active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-light-primary dark:focus-visible:outline-dark-primary"
+          >
+            <ResilientImage
+              src={profile.avatarUrl}
+              alt={profile.fullName}
+              fallbackType="avatar"
+              initials={initials}
+              className="w-full h-full object-cover"
+            />
+          </button>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowNotifications((prev) => !prev)}
+              aria-label="Notificações"
+              aria-expanded={showNotifications}
+              className="relative inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded-full text-light-on-surface dark:text-dark-on-surface hover:bg-light-surface-container-high dark:hover:bg-dark-surface-container-high transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-light-primary dark:focus-visible:outline-dark-primary"
+            >
+              <span className="material-symbols-outlined text-[20px]">notifications</span>
+              {unreadCount > 0 && (
+                <span className="absolute top-2 right-2 min-w-[16px] h-4 px-1 rounded-full bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary font-mono text-[10px] leading-4 font-semibold text-center tabular-nums">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+
+            {showNotifications && (
+              <div
+                role="region"
+                aria-label="Central de notificações"
+                className="absolute right-0 mt-2 w-80 sm:w-96 rounded-lg bg-light-surface-container-lowest dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant shadow-xl p-4 z-30 flex flex-col gap-3 max-h-[75vh] overflow-y-auto"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface">
+                    Notificações Úteis
+                  </h2>
+                  {unreadCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={onMarkAllRead}
+                      className="font-body text-body-sm text-light-primary dark:text-dark-primary hover:underline whitespace-nowrap"
+                    >
+                      Marcar lidas
+                    </button>
+                  )}
+                </div>
+
+                {onTriggerBrowserReminder && (
+                  <button
+                    type="button"
+                    onClick={onTriggerBrowserReminder}
+                    className="w-full min-h-[36px] inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md bg-light-surface-container dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant font-body text-body-sm text-light-primary dark:text-dark-primary hover:border-light-primary dark:hover:border-dark-primary transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">
+                      notifications_active
+                    </span>
+                    <span>Ativar e testar lembrete no navegador</span>
+                  </button>
+                )}
+
+                {notifications.length === 0 ? (
+                  <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant py-3 text-center">
+                    Tudo em dia por aqui!
+                  </p>
+                ) : (
+                  <ul className="flex flex-col divide-y divide-light-outline-variant dark:divide-dark-outline-variant">
+                    {notifications.map((notif) => (
+                      <li key={notif.id} className="py-2.5 first:pt-0 last:pb-0 flex flex-col gap-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <p
+                            className={`font-body text-body-sm ${
+                              notif.read
+                                ? 'text-light-on-surface-variant dark:text-dark-on-surface-variant'
+                                : 'text-light-on-surface dark:text-dark-on-surface font-medium'
+                            }`}
+                          >
+                            {notif.title}
+                          </p>
+                          {onDismissNotification && (
+                            <button
+                              type="button"
+                              onClick={() => onDismissNotification(notif.id)}
+                              aria-label="Dispensar notificação"
+                              className="text-light-on-surface-variant dark:text-dark-on-surface-variant hover:text-light-error dark:hover:text-dark-error shrink-0"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">close</span>
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant tabular-nums">
+                            {notif.time}
+                          </span>
+                          {notif.targetTab && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowNotifications(false);
+                                if (onOpenNotification) {
+                                  onOpenNotification(notif);
+                                } else {
+                                  onNavigate(notif.targetTab!);
+                                }
+                              }}
+                              className="font-body text-label-sm text-light-primary dark:text-dark-primary hover:underline"
+                            >
+                              {notif.actionLabel || 'Abrir'}
+                            </button>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
         </div>
+      </header>
+
+      <PWAInstallBanner />
+
+      {/* Universal Search Bar -> Opens Busca Universal */}
+      <div className="px-4 lg:px-8 pb-2">
+        <button
+          type="button"
+          onClick={() => onNavigate('explorar')}
+          className="w-full min-h-[42px] rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant hover:border-light-primary/70 dark:hover:border-dark-primary/70 px-3.5 py-2 flex items-center justify-between gap-2 text-left transition-colors"
+        >
+          <span className="flex items-center gap-2.5 min-w-0">
+            <span className="material-symbols-outlined text-[19px] text-light-on-surface-variant dark:text-dark-on-surface-variant">
+              search
+            </span>
+            <span className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant truncate">
+              Busca universal: diário, hábitos, agenda, finanças, notas, músicas...
+            </span>
+          </span>
+          <span className="font-body text-label-sm text-light-primary dark:text-dark-primary whitespace-nowrap">
+            Buscar tudo
+          </span>
+        </button>
+      </div>
+
+      {/* Customizable Content & Feature Menu Strip */}
+      <MediaMenuStrip
+        activeTab="inicio"
+        onNavigate={onNavigate}
+        variant="strip"
+        unreadMessagesCount={unreadMessagesCount}
+        menuOrder={customization.menuOrder}
+        hiddenMenuItems={customization.hiddenMenuItems}
+        onOpenCustomize={onOpenCustomize}
+      />
+
+      {/* Customizable Main Dashboard Content */}
+      <main className="px-4 lg:px-8 pb-28 lg:pb-12 grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-5 items-start">
+        {orderedHomeSections.length === 0 ? (
+          <div className="lg:col-span-2 rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-6 text-center flex flex-col items-center gap-3">
+            <p className="font-body text-body-md text-light-on-surface-variant dark:text-dark-on-surface-variant">
+              Todos os blocos da tela inicial foram ocultados.
+            </p>
+            <button
+              type="button"
+              onClick={onOpenCustomize}
+              className="px-4 py-2 rounded-full bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary font-body text-label-md"
+            >
+              Escolher o que aparece na tela
+            </button>
+          </div>
+        ) : (
+          orderedHomeSections.map((sectionId) => renderSection(sectionId))
+        )}
       </main>
     </div>
   );

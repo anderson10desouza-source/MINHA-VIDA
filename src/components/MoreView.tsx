@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { AppTab, TaskItem, UserProfile } from '../types';
+import React, { useRef, useState } from 'react';
+import { AppCustomizationState, AppTab, TaskItem, UserProfile } from '../types';
 import { MediaMenuStrip } from './MediaMenuStrip';
 import { PWAInstallButton } from './OfflineModeBar';
 import { ResilientImage } from './ResilientImage';
@@ -16,6 +16,14 @@ interface MoreViewProps {
     favorites: number;
     history: number;
   };
+  customization: AppCustomizationState;
+  onOpenCustomize: () => void;
+  isCloudSyncing?: boolean;
+  lastCloudSyncAt?: string | null;
+  onCloudSyncNow?: () => Promise<void>;
+  onCloudPullNow?: () => Promise<void>;
+  onExportBackup: () => void;
+  onImportBackupFile: (file: File) => Promise<void>;
   onOpenProfile: () => void;
   onNavigate: (tab: AppTab) => void;
   unreadMessagesCount: number;
@@ -33,6 +41,14 @@ export const MoreView: React.FC<MoreViewProps> = ({
   isManualOffline,
   onToggleManualOffline,
   offlineCounts,
+  customization,
+  onOpenCustomize,
+  isCloudSyncing = false,
+  lastCloudSyncAt = null,
+  onCloudSyncNow,
+  onCloudPullNow,
+  onExportBackup,
+  onImportBackupFile,
   onOpenProfile,
   onNavigate,
   unreadMessagesCount,
@@ -42,6 +58,7 @@ export const MoreView: React.FC<MoreViewProps> = ({
   onResetDemoData,
 }) => {
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const backupInputRef = useRef<HTMLInputElement | null>(null);
 
   const initials = profile.fullName
     .split(' ')
@@ -60,22 +77,35 @@ export const MoreView: React.FC<MoreViewProps> = ({
 
   return (
     <div className="flex flex-col">
-      <header className="px-4 lg:px-8 pt-6 pb-4">
-        <h1 className="font-headline text-headline-lg text-light-on-surface dark:text-dark-on-surface">
-          Mais
-        </h1>
-        <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
-          Menu de conteúdos, perfil, tarefas do dia e preferências.
-        </p>
+      <header className="px-4 lg:px-8 pt-6 pb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="font-headline text-headline-lg text-light-on-surface dark:text-dark-on-surface">
+            Tudo em um só lugar
+          </h1>
+          <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
+            Ferramentas, personalização visual, sincronização, backup e tarefas.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onOpenCustomize}
+          className="min-h-[40px] px-4 py-2 rounded-full bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary font-body text-label-md inline-flex items-center gap-1.5"
+        >
+          <span className="material-symbols-outlined text-[18px]">palette</span>
+          <span>Cores e Organização</span>
+        </button>
       </header>
 
       <main className="px-4 lg:px-8 pb-24 lg:pb-10 flex flex-col gap-4">
-        {/* 6-Item Grid Menu: Podcast, Música, Fotos, Mensagem, Devocional, Rádio */}
         <MediaMenuStrip
           activeTab="mais"
           onNavigate={onNavigate}
           variant="grid"
           unreadMessagesCount={unreadMessagesCount}
+          menuOrder={customization.menuOrder}
+          hiddenMenuItems={customization.hiddenMenuItems}
+          onOpenCustomize={onOpenCustomize}
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
@@ -109,6 +139,83 @@ export const MoreView: React.FC<MoreViewProps> = ({
                 chevron_right
               </span>
             </button>
+
+            {/* Sync & Backup Card */}
+            <section className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-4 flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface">
+                  Sincronizar e Backup
+                </h2>
+                {lastCloudSyncAt && (
+                  <span className="font-mono text-label-sm text-cat-emerald tabular-nums">
+                    Salvo às{' '}
+                    {new Date(lastCloudSyncAt).toLocaleTimeString('pt-BR', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={isCloudSyncing}
+                  onClick={() => void onCloudSyncNow?.()}
+                  className="min-h-[40px] px-3 py-2 rounded-md bg-light-surface-container dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant hover:border-light-primary dark:hover:border-dark-primary font-body text-label-md text-light-on-surface dark:text-dark-on-surface inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[18px] text-light-primary dark:text-dark-primary">
+                    cloud_upload
+                  </span>
+                  <span>{isCloudSyncing ? 'Salvando...' : 'Salvar Nuvem'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isCloudSyncing}
+                  onClick={() => void onCloudPullNow?.()}
+                  className="min-h-[40px] px-3 py-2 rounded-md bg-light-surface-container dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant hover:border-light-primary dark:hover:border-dark-primary font-body text-label-md text-light-on-surface dark:text-dark-on-surface inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[18px] text-cat-blue">
+                    cloud_download
+                  </span>
+                  <span>Baixar Nuvem</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onExportBackup}
+                  className="min-h-[40px] px-3 py-2 rounded-md bg-light-surface-container dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant hover:border-light-primary dark:hover:border-dark-primary font-body text-label-md text-light-on-surface dark:text-dark-on-surface inline-flex items-center justify-center gap-1.5"
+                >
+                  <span className="material-symbols-outlined text-[18px] text-cat-emerald">
+                    download
+                  </span>
+                  <span>Exportar .JSON</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => backupInputRef.current?.click()}
+                  className="min-h-[40px] px-3 py-2 rounded-md bg-light-surface-container dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant hover:border-light-primary dark:hover:border-dark-primary font-body text-label-md text-light-on-surface dark:text-dark-on-surface inline-flex items-center justify-center gap-1.5"
+                >
+                  <span className="material-symbols-outlined text-[18px] text-accent-gold">
+                    upload_file
+                  </span>
+                  <span>Restaurar .JSON</span>
+                </button>
+              </div>
+              <input
+                ref={backupInputRef}
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (file) void onImportBackupFile(file);
+                }}
+              />
+            </section>
 
             {/* Appearance & Data */}
             <section className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-4 flex flex-col gap-3">
@@ -146,6 +253,19 @@ export const MoreView: React.FC<MoreViewProps> = ({
                   />
                 </button>
               </div>
+
+              <button
+                type="button"
+                onClick={onOpenCustomize}
+                className="min-h-[42px] px-3 py-2 rounded-md bg-light-surface-container dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant hover:border-light-primary dark:hover:border-dark-primary flex items-center justify-between gap-2 text-left"
+              >
+                <span className="font-body text-body-sm text-light-on-surface dark:text-dark-on-surface">
+                  Mudar cores, organizar ícones e tela principal
+                </span>
+                <span className="material-symbols-outlined text-[18px] text-light-primary dark:text-dark-primary">
+                  palette
+                </span>
+              </button>
 
               <div className="border-t border-light-outline-variant dark:border-dark-outline-variant" />
 

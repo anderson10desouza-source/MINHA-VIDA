@@ -11,6 +11,34 @@ export interface MediaMenuItem {
 
 export const MEDIA_MENU_ITEMS: MediaMenuItem[] = [
   {
+    id: 'assistente',
+    label: 'Assistente IA',
+    icon: 'auto_awesome',
+    accentClass: 'text-light-primary dark:text-dark-primary',
+    subtitle: 'Meu assistente inteligente',
+  },
+  {
+    id: 'desempenho',
+    label: 'Desempenho',
+    icon: 'insights',
+    accentClass: 'text-cat-emerald',
+    subtitle: 'Painel de evolução e metas',
+  },
+  {
+    id: 'habitos',
+    label: 'Hábitos',
+    icon: 'repeat',
+    accentClass: 'text-cat-blue',
+    subtitle: 'Hábitos, rotinas e sequência',
+  },
+  {
+    id: 'diario',
+    label: 'Diário',
+    icon: 'book_2',
+    accentClass: 'text-accent-gold',
+    subtitle: 'Diário pessoal e humor',
+  },
+  {
     id: 'podcast',
     label: 'Podcast',
     icon: 'podcasts',
@@ -124,11 +152,40 @@ export const MEDIA_MENU_ITEMS: MediaMenuItem[] = [
   },
 ];
 
+export function getOrderedMenuItems(
+  menuOrder?: AppTab[],
+  hiddenMenuItems?: AppTab[]
+): MediaMenuItem[] {
+  const hiddenSet = new Set(hiddenMenuItems ?? []);
+  const order = menuOrder && menuOrder.length > 0 ? menuOrder : MEDIA_MENU_ITEMS.map((m) => m.id);
+  const byId = new Map(MEDIA_MENU_ITEMS.map((m) => [m.id, m]));
+  const result: MediaMenuItem[] = [];
+  const seen = new Set<AppTab>();
+
+  for (const id of order) {
+    const found = byId.get(id);
+    if (found && !seen.has(id) && !hiddenSet.has(id)) {
+      result.push(found);
+      seen.add(id);
+    }
+  }
+  for (const item of MEDIA_MENU_ITEMS) {
+    if (!seen.has(item.id) && !hiddenSet.has(item.id)) {
+      result.push(item);
+      seen.add(item.id);
+    }
+  }
+  return result;
+}
+
 interface MediaMenuStripProps {
   activeTab: AppTab;
   onNavigate: (tab: AppTab) => void;
   variant: 'strip' | 'grid';
   unreadMessagesCount?: number;
+  menuOrder?: AppTab[];
+  hiddenMenuItems?: AppTab[];
+  onOpenCustomize?: () => void;
 }
 
 export const MediaMenuStrip: React.FC<MediaMenuStripProps> = ({
@@ -136,15 +193,35 @@ export const MediaMenuStrip: React.FC<MediaMenuStripProps> = ({
   onNavigate,
   variant,
   unreadMessagesCount = 0,
+  menuOrder,
+  hiddenMenuItems,
+  onOpenCustomize,
 }) => {
+  const visibleItems = getOrderedMenuItems(menuOrder, hiddenMenuItems);
+
   if (variant === 'strip') {
     return (
       <nav
         aria-label="Menu de conteúdos"
         className="px-4 lg:px-8 pb-3"
       >
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
+            Tudo em um só lugar · {visibleItems.length} ferramentas
+          </span>
+          {onOpenCustomize && (
+            <button
+              type="button"
+              onClick={onOpenCustomize}
+              className="inline-flex items-center gap-1 font-body text-label-sm text-light-primary dark:text-dark-primary hover:underline"
+            >
+              <span className="material-symbols-outlined text-[15px]">tune</span>
+              <span>Organizar ícones e cores</span>
+            </button>
+          )}
+        </div>
         <div className="grid grid-cols-3 md:flex md:flex-wrap gap-2">
-          {MEDIA_MENU_ITEMS.map((item) => {
+          {visibleItems.map((item) => {
             const isActive = activeTab === item.id;
             const showUnread = item.id === 'mensagem' && unreadMessagesCount > 0;
             return (
@@ -185,11 +262,23 @@ export const MediaMenuStrip: React.FC<MediaMenuStripProps> = ({
       aria-label="Menu Principal de Conteúdos"
       className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-4 flex flex-col gap-3"
     >
-      <h2 className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface">
-        Menu de Conteúdos
-      </h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface">
+          Tudo em um só lugar
+        </h2>
+        {onOpenCustomize && (
+          <button
+            type="button"
+            onClick={onOpenCustomize}
+            className="inline-flex items-center gap-1 font-body text-label-sm text-light-primary dark:text-dark-primary hover:underline"
+          >
+            <span className="material-symbols-outlined text-[16px]">tune</span>
+            <span>Organizar ícones</span>
+          </button>
+        )}
+      </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-        {MEDIA_MENU_ITEMS.map((item) => {
+        {visibleItems.map((item) => {
           const showUnread = item.id === 'mensagem' && unreadMessagesCount > 0;
           return (
             <button

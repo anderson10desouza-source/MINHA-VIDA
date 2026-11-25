@@ -1,6 +1,6 @@
 import React from 'react';
 import { AppTab, UserProfile } from '../types';
-import { MEDIA_MENU_ITEMS } from './MediaMenuStrip';
+import { getOrderedMenuItems } from './MediaMenuStrip';
 import { ResilientImage } from './ResilientImage';
 
 interface DesktopSidebarProps {
@@ -8,11 +8,14 @@ interface DesktopSidebarProps {
   onNavigate: (tab: AppTab) => void;
   profile: UserProfile;
   unreadMessagesCount?: number;
+  menuOrder?: AppTab[];
+  hiddenMenuItems?: AppTab[];
+  onOpenCustomize?: () => void;
 }
 
 const NAV_ITEMS: { id: AppTab; label: string; icon: string }[] = [
   { id: 'inicio', label: 'Início', icon: 'home' },
-  { id: 'explorar', label: 'Explorar', icon: 'search' },
+  { id: 'explorar', label: 'Busca Universal', icon: 'search' },
   { id: 'favoritos', label: 'Favoritos', icon: 'favorite' },
   { id: 'contatos', label: 'Contatos', icon: 'person' },
   { id: 'mais', label: 'Mais', icon: 'apps' },
@@ -23,7 +26,11 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
   onNavigate,
   profile,
   unreadMessagesCount = 0,
+  menuOrder,
+  hiddenMenuItems,
+  onOpenCustomize,
 }) => {
+  const orderedMenu = getOrderedMenuItems(menuOrder, hiddenMenuItems);
   const initials = profile.fullName
     .split(' ')
     .filter(Boolean)
@@ -77,11 +84,23 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
         </nav>
 
         <div className="border-t border-light-outline-variant dark:border-dark-outline-variant pt-4 flex flex-col gap-1.5">
-          <span className="px-3 font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
-            Conteúdos &amp; Mídia
-          </span>
+          <div className="px-3 flex items-center justify-between gap-2">
+            <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
+              Tudo em um só lugar
+            </span>
+            {onOpenCustomize && (
+              <button
+                type="button"
+                onClick={onOpenCustomize}
+                title="Personalizar cores e ícones"
+                className="text-light-primary dark:text-dark-primary hover:underline font-body text-label-sm"
+              >
+                Organizar
+              </button>
+            )}
+          </div>
           <nav className="flex flex-col gap-1" aria-label="Menu de conteúdos">
-            {MEDIA_MENU_ITEMS.map((item) => {
+            {orderedMenu.map((item) => {
               const isActive = activeTab === item.id;
               const showUnread = item.id === 'mensagem' && unreadMessagesCount > 0;
               return (

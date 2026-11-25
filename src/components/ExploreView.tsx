@@ -9,7 +9,9 @@ import {
   FinanceTransaction,
   GoalItem,
   GroceryItem,
+  HabitItem,
   InvestmentAsset,
+  JournalEntry,
   MusicTrack,
   NoteEntry,
   PantryItem,
@@ -21,6 +23,7 @@ import {
   TripItem,
   YouTubeVideoItem,
 } from '../types';
+import { getOrderedMenuItems } from './MediaMenuStrip';
 import { ResilientImage } from './ResilientImage';
 
 interface ExploreViewProps {
@@ -42,6 +45,10 @@ interface ExploreViewProps {
   notes: NoteEntry[];
   goals: GoalItem[];
   trips: TripItem[];
+  journalEntries: JournalEntry[];
+  habits: HabitItem[];
+  menuOrder?: AppTab[];
+  hiddenMenuItems?: AppTab[];
   favoriteDevotionalIds: string[];
   favoriteTrackIds: string[];
   currentTrackId: string;
@@ -62,6 +69,9 @@ interface ExploreViewProps {
 
 type ExploreFilter =
   | 'tudo'
+  | 'ferramentas'
+  | 'diario'
+  | 'habitos'
   | 'devocionais'
   | 'musicas'
   | 'podcasts'
@@ -127,6 +137,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   notes,
   goals,
   trips,
+  journalEntries,
+  habits,
+  menuOrder,
+  hiddenMenuItems,
   favoriteDevotionalIds,
   favoriteTrackIds,
   currentTrackId,
@@ -148,6 +162,30 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [filter, setFilter] = useState<ExploreFilter>('tudo');
 
   const q = query.trim().toLowerCase();
+
+  const orderedTools = getOrderedMenuItems(menuOrder, hiddenMenuItems);
+  const filteredTools = orderedTools.filter(
+    (item) =>
+      !q ||
+      item.label.toLowerCase().includes(q) ||
+      item.subtitle.toLowerCase().includes(q)
+  );
+
+  const filteredJournal = journalEntries.filter(
+    (j) =>
+      j.title.toLowerCase().includes(q) ||
+      j.content.toLowerCase().includes(q) ||
+      j.mood.toLowerCase().includes(q) ||
+      (j.gratitude || '').toLowerCase().includes(q) ||
+      j.tags.some((t) => t.toLowerCase().includes(q))
+  );
+
+  const filteredHabits = habits.filter(
+    (h) =>
+      h.title.toLowerCase().includes(q) ||
+      h.category.toLowerCase().includes(q) ||
+      h.period.toLowerCase().includes(q)
+  );
 
   const filteredDevotionals = devotionals.filter(
     (d) =>
@@ -280,10 +318,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       <header className="px-4 lg:px-8 pt-6 pb-4 flex flex-col gap-3">
         <div>
           <h1 className="font-headline text-headline-lg text-light-on-surface dark:text-dark-on-surface">
-            Busca e Filtro
+            Busca Universal
           </h1>
           <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant">
-            Encontre devocionais, músicas, podcasts, rádios, agenda e contatos.
+            Pesquise tudo em um só lugar: diário, hábitos, ferramentas, agenda, finanças, notas, metas, músicas e mais.
           </p>
         </div>
 
@@ -308,6 +346,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           {(
             [
               { id: 'tudo', label: 'Tudo' },
+              { id: 'ferramentas', label: 'Ferramentas' },
+              { id: 'diario', label: 'Diário' },
+              { id: 'habitos', label: 'Hábitos' },
               { id: 'devocionais', label: 'Devocionais' },
               { id: 'musicas', label: 'Músicas' },
               { id: 'podcasts', label: 'Podcasts' },
@@ -345,6 +386,111 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       </header>
 
       <main className="px-4 lg:px-8 pb-28 lg:pb-12 flex flex-col gap-5">
+        {(filter === 'tudo' || filter === 'ferramentas') && filteredTools.length > 0 && (
+          <section className="flex flex-col gap-3">
+            <h2 className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface">
+              Ferramentas &amp; Módulos ({filteredTools.length})
+            </h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+              {filteredTools.slice(0, filter === 'tudo' && !q ? 8 : 24).map((tool) => (
+                <button
+                  key={tool.id}
+                  type="button"
+                  onClick={() => onNavigate(tool.id)}
+                  className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant hover:border-light-primary dark:hover:border-dark-primary p-3 flex items-center gap-2.5 text-left transition-colors"
+                >
+                  <span className={`material-symbols-outlined text-[20px] shrink-0 ${tool.accentClass}`}>
+                    {tool.icon}
+                  </span>
+                  <div className="min-w-0">
+                    <span className="font-headline text-label-lg text-light-on-surface dark:text-dark-on-surface block truncate">
+                      {tool.label}
+                    </span>
+                    <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant block truncate">
+                      {tool.subtitle}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {(filter === 'tudo' || filter === 'diario') && filteredJournal.length > 0 && (
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface">
+                Diário Pessoal ({filteredJournal.length})
+              </h2>
+              <button
+                type="button"
+                onClick={() => onNavigate('diario')}
+                className="font-body text-body-sm text-light-primary dark:text-dark-primary hover:underline"
+              >
+                Abrir Diário
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {filteredJournal.slice(0, 6).map((entry) => (
+                <article
+                  key={entry.id}
+                  onClick={() => onNavigate('diario')}
+                  className="cursor-pointer rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant hover:border-light-primary dark:hover:border-dark-primary p-3 flex flex-col gap-1"
+                >
+                  <span className="font-mono text-label-sm text-accent-gold">
+                    {entry.date.split('-').reverse().join('/')} · {entry.mood}
+                  </span>
+                  <h3 className="font-body text-label-lg text-light-on-surface dark:text-dark-on-surface truncate">
+                    {entry.title}
+                  </h3>
+                  {entry.content && (
+                    <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant line-clamp-2">
+                      {entry.content}
+                    </p>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {(filter === 'tudo' || filter === 'habitos') && filteredHabits.length > 0 && (
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface">
+                Hábitos e Rotinas ({filteredHabits.length})
+              </h2>
+              <button
+                type="button"
+                onClick={() => onNavigate('habitos')}
+                className="font-body text-body-sm text-light-primary dark:text-dark-primary hover:underline"
+              >
+                Abrir Hábitos
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {filteredHabits.slice(0, 6).map((habit) => (
+                <article
+                  key={habit.id}
+                  onClick={() => onNavigate('habitos')}
+                  className="cursor-pointer rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant hover:border-light-primary dark:hover:border-dark-primary p-3 flex items-center justify-between gap-2"
+                >
+                  <div className="min-w-0">
+                    <span className="font-body text-label-sm text-light-primary dark:text-dark-primary">
+                      {habit.period} · {habit.category}
+                    </span>
+                    <h3 className="font-body text-label-lg text-light-on-surface dark:text-dark-on-surface truncate">
+                      {habit.title}
+                    </h3>
+                  </div>
+                  <span className="font-mono text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant shrink-0">
+                    {habit.targetPerWeek}x/sem
+                  </span>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
         {(filter === 'tudo' || filter === 'devocionais') &&
           (filteredDevotionals.length > 0 || filteredPersonal.length > 0) && (
             <section className="flex flex-col gap-3">
