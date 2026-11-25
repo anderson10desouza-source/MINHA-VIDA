@@ -84,6 +84,7 @@ import {
   YouTubeVideoItem,
 } from './types';
 import { ambientAudio, RadioStatus } from './utils/audioPlayer';
+import { formatShortDatePtBr, toLocalDateKey } from './utils/dateTime';
 import {
   deleteDevotionalAudio,
   loadAllDevotionalAudios,
@@ -399,6 +400,7 @@ export default function App() {
     useState<FinanceListFilter | null>(null);
 
   const [isAgendaModalOpen, setIsAgendaModalOpen] = useState(false);
+  const [agendaModalDate, setAgendaModalDate] = useState<string>(() => toLocalDateKey());
   const [devotionalSubTab, setDevotionalSubTab] = useState<'diario' | 'meus'>('diario');
   const [devotionalFocus, setDevotionalFocus] = useState<'written' | 'audio' | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -1424,19 +1426,27 @@ export default function App() {
   };
 
   const handleAddAgendaItem = (item: {
+    date?: string;
     time: string;
     title: string;
     category: AgendaCategory;
   }) => {
+    const itemDate = item.date || toLocalDateKey();
+    const todayKey = toLocalDateKey();
     const next: AgendaItem = {
       id: `ag-${Date.now()}`,
+      date: itemDate,
       time: item.time,
       title: item.title,
       category: item.category,
       completed: false,
     };
     setAgenda((prev) => [...prev, next]);
-    showToast(`"${item.title}" adicionado às ${item.time}.`);
+    showToast(
+      itemDate === todayKey
+        ? `"${item.title}" adicionado hoje às ${item.time}.`
+        : `"${item.title}" agendado para ${formatShortDatePtBr(itemDate)} às ${item.time}.`
+    );
   };
 
   const handleToggleAgendaItem = (id: string) => {
@@ -2203,19 +2213,30 @@ export default function App() {
           },
         ]
       : []),
-    ...(agenda.some((a) => !a.completed)
-      ? [
-          {
-            id: 'dyn-agenda',
-            title: `Próximo compromisso: ${agenda.find((a) => !a.completed)?.title} (${agenda.find((a) => !a.completed)?.time})`,
-            time: 'Hoje',
-            read: readDynNotifIds.includes('dyn-agenda'),
-            type: 'agenda' as const,
-            targetTab: 'inicio' as AppTab,
-            actionLabel: 'Ver agenda',
-          },
-        ]
-      : []),
+    ...(() => {
+      const todayKey = toLocalDateKey();
+      const nextAgendaItem = [...agenda]
+        .filter((a) => !a.completed)
+        .sort((a, b) => {
+          const dA = a.date || todayKey;
+          const dB = b.date || todayKey;
+          if (dA !== dB) return dA.localeCompare(dB);
+          return a.time.localeCompare(b.time);
+        })[0];
+      if (!nextAgendaItem) return [];
+      const itemDate = nextAgendaItem.date || todayKey;
+      return [
+        {
+          id: 'dyn-agenda',
+          title: `Próximo compromisso: ${nextAgendaItem.title} (${nextAgendaItem.time})`,
+          time: itemDate === todayKey ? 'Hoje' : formatShortDatePtBr(itemDate),
+          read: readDynNotifIds.includes('dyn-agenda'),
+          type: 'agenda' as const,
+          targetTab: 'inicio' as AppTab,
+          actionLabel: 'Ver agenda',
+        },
+      ];
+    })(),
     ...(unreadMessagesCount > 0
       ? [
           {
@@ -2491,7 +2512,10 @@ export default function App() {
           <HomeView
             profile={profile}
             agenda={agenda}
-            onOpenAgendaModal={() => setIsAgendaModalOpen(true)}
+            onOpenAgendaModal={(dateKey) => {
+              setAgendaModalDate(dateKey || toLocalDateKey());
+              setIsAgendaModalOpen(true);
+            }}
             onToggleAgendaItem={handleToggleAgendaItem}
             onDeleteAgendaItem={handleDeleteAgendaItem}
             currentDevotional={currentDevotional}
@@ -3058,6 +3082,7 @@ export default function App() {
         {/* Quick-Add Agenda Modal */}
         <AgendaModal
           isOpen={isAgendaModalOpen}
+          defaultDate={agendaModalDate}
           onClose={() => setIsAgendaModalOpen(false)}
           onAdd={handleAddAgendaItem}
         />

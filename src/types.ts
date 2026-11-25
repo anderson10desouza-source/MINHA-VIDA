@@ -26,6 +26,7 @@ export type AgendaCategory = 'blue' | 'gold' | 'emerald' | 'violet';
 
 export interface AgendaItem {
   id: string;
+  date?: string; // YYYY-MM-DD
   time: string;
   title: string;
   category: AgendaCategory;

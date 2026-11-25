@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AgendaCategory } from '../types';
+import { formatTimeHHMM, toLocalDateKey } from '../utils/dateTime';
 
 interface AgendaModalProps {
   isOpen: boolean;
+  defaultDate?: string;
   onClose: () => void;
-  onAdd: (item: { time: string; title: string; category: AgendaCategory }) => void;
+  onAdd: (item: { date: string; time: string; title: string; category: AgendaCategory }) => void;
 }
 
 const CATEGORIES: { id: AgendaCategory; label: string; dotClass: string }[] = [
@@ -14,10 +16,22 @@ const CATEGORIES: { id: AgendaCategory; label: string; dotClass: string }[] = [
   { id: 'violet', label: 'Saúde', dotClass: 'bg-cat-violet' },
 ];
 
-export const AgendaModal: React.FC<AgendaModalProps> = ({ isOpen, onClose, onAdd }) => {
-  const [time, setTime] = useState('20:30');
+export const AgendaModal: React.FC<AgendaModalProps> = ({
+  isOpen,
+  defaultDate,
+  onClose,
+  onAdd,
+}) => {
+  const [date, setDate] = useState(() => defaultDate || toLocalDateKey());
+  const [time, setTime] = useState(() => formatTimeHHMM(new Date()));
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<AgendaCategory>('blue');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setDate(defaultDate || toLocalDateKey());
+    setTime(formatTimeHHMM(new Date()));
+  }, [isOpen, defaultDate]);
 
   if (!isOpen) return null;
 
@@ -25,9 +39,13 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({ isOpen, onClose, onAdd
     e.preventDefault();
     const trimmed = title.trim();
     if (!trimmed) return;
-    onAdd({ time, title: trimmed, category });
+    onAdd({
+      date: date || toLocalDateKey(),
+      time: time || formatTimeHHMM(new Date()),
+      title: trimmed,
+      category,
+    });
     setTitle('');
-    setTime('20:30');
     setCategory('blue');
     onClose();
   };
@@ -61,21 +79,40 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({ isOpen, onClose, onAdd
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="input-time"
-              className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant"
-            >
-              Horário
-            </label>
-            <input
-              id="input-time"
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              required
-              className="rounded bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface font-mono text-mono-md tabular-nums px-3 py-2.5 focus:outline-none focus:border-light-primary dark:focus:border-dark-primary"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="input-date"
+                className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant"
+              >
+                Data
+              </label>
+              <input
+                id="input-date"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                required
+                className="rounded bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface font-mono text-body-sm tabular-nums px-3 py-2.5 focus:outline-none focus:border-light-primary dark:focus:border-dark-primary"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="input-time"
+                className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant"
+              >
+                Horário
+              </label>
+              <input
+                id="input-time"
+                type="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                required
+                className="rounded bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface dark:text-dark-on-surface font-mono text-mono-md tabular-nums px-3 py-2.5 focus:outline-none focus:border-light-primary dark:focus:border-dark-primary"
+              />
+            </div>
           </div>
 
           <div className="flex flex-col gap-1.5">

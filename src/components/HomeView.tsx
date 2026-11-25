@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AgendaCategory,
   AgendaItem,
@@ -11,6 +11,17 @@ import {
   TaskItem,
   UserProfile,
 } from '../types';
+import {
+  formatFullDatePtBr,
+  formatMonthYearPtBr,
+  formatShortDatePtBr,
+  formatTimeHHMM,
+  getGreetingForDate,
+  getMonthCalendarCells,
+  MONTH_NAMES_PT,
+  toLocalDateKey,
+  WEEKDAY_SHORT_PT,
+} from '../utils/dateTime';
 import { MediaMenuStrip } from './MediaMenuStrip';
 import { PWAInstallBanner } from './OfflineModeBar';
 import { ResilientImage } from './ResilientImage';
@@ -19,7 +30,7 @@ import { UsefulWidgets } from './UsefulWidgets';
 interface HomeViewProps {
   profile: UserProfile;
   agenda: AgendaItem[];
-  onOpenAgendaModal: () => void;
+  onOpenAgendaModal: (dateKey?: string) => void;
   onToggleAgendaItem: (id: string) => void;
   onDeleteAgendaItem: (id: string) => void;
   currentDevotional: DevotionalItem;
@@ -122,6 +133,45 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onShowToast,
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
+  const [now, setNow] = useState<Date>(() => new Date());
+  const [selectedDate, setSelectedDate] = useState<string>(() => toLocalDateKey());
+  const [calendarYear, setCalendarYear] = useState<number>(() => new Date().getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState<number>(() => new Date().getMonth());
+  const [showCalendar, setShowCalendar] = useState<boolean>(true);
+
+  useEffect(() => {
+    const syncNow = () => {
+      const current = new Date();
+      setNow((prev) => {
+        const prevKey = toLocalDateKey(prev);
+        const nextKey = toLocalDateKey(current);
+        if (prevKey !== nextKey) {
+          setSelectedDate((sel) => (sel === prevKey ? nextKey : sel));
+          setCalendarYear(current.getFullYear());
+          setCalendarMonth(current.getMonth());
+        }
+        return current;
+      });
+    };
+
+    const interval = window.setInterval(syncNow, 15000);
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') syncNow();
+    };
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+    };
+  }, []);
+
+  const todayKey = toLocalDateKey(now);
+  const greeting = getGreetingForDate(now);
+  const currentTimeLabel = formatTimeHHMM(now);
+  const currentFullDateLabel = formatFullDatePtBr(now);
+  const currentYear = now.getFullYear();
 
   const firstName = profile.fullName.trim().split(' ')[0] || 'Você';
   const initials = profile.fullName
@@ -133,17 +183,53 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
+  const agendaDatesWithEvents = new Set(
+    agenda.map((item) => item.date || todayKey)
+  );
+  const selectedDayAgenda = agenda.filter(
+    (item) => (item.date || todayKey) === selectedDate
+  );
+  const sortedAgenda = [...selectedDayAgenda].sort((a, b) =>
+    a.time.localeCompare(b.time)
+  );
+  const completedAgendaCount = selectedDayAgenda.filter((a) => a.completed).length;
+
   const totalTasksCount = tasks.length;
   const completedTasksCount = tasks.filter((t) => t.completed).length;
-  const completedAgendaCount = agenda.filter((a) => a.completed).length;
-  const totalActions = totalTasksCount + agenda.length;
+  const totalActions = totalTasksCount + selectedDayAgenda.length;
   const doneActions = completedTasksCount + completedAgendaCount;
   const focusPercent =
     totalTasksCount === 8 && doneActions === 5
       ? 87
       : Math.min(100, Math.max(25, Math.round(45 + (doneActions / Math.max(1, totalActions)) * 55)));
 
-  const sortedAgenda = [...agenda].sort((a, b) => a.time.localeCompare(b.time));
+  const calendarCells = getMonthCalendarCells(calendarYear, calendarMonth);
+
+  const handlePrevMonth = () => {
+    if (calendarMonth === 0) {
+      setCalendarYear((y) => y - 1);
+      setCalendarMonth(11);
+    } else {
+      setCalendarMonth((m) => m - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (calendarMonth === 11) {
+      setCalendarYear((y) => y + 1);
+      setCalendarMonth(0);
+    } else {
+      setCalendarMonth((m) => m + 1);
+    }
+  };
+
+  const handleGoToday = () => {
+    const fresh = new Date();
+    setNow(fresh);
+    setSelectedDate(toLocalDateKey(fresh));
+    setCalendarYear(fresh.getFullYear());
+    setCalendarMonth(fresh.getMonth());
+  };
 
   const handleCopyDevotional = async () => {
     try {
@@ -162,9 +248,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
       <header className="px-4 lg:px-8 pt-6 pb-3 flex items-start justify-between gap-3 relative">
         <div className="flex flex-col gap-1 flex-1 min-w-0">
           <h1 className="font-headline text-headline-lg lg:text-[28px] lg:leading-[34px] text-light-on-surface dark:text-dark-on-surface text-balance">
-            Bom dia,{' '}
+            {greeting},{' '}
             <span className="text-light-primary dark:text-dark-primary">{firstName}!</span>
           </h1>
+          <p className="font-body text-label-sm text-light-primary dark:text-dark-primary tabular-nums">
+            {currentFullDateLabel} · {currentTimeLabel}
+          </p>
           <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant text-pretty">
             “Tudo posso naquele que me fortalece.”
             <br />
@@ -339,31 +428,173 @@ export const HomeView: React.FC<HomeViewProps> = ({
           {/* Card 1: Minha Agenda */}
           <article className="rounded-lg bg-light-surface-container-low dark:bg-dark-surface-container-low border border-light-outline-variant dark:border-dark-outline-variant p-4 flex flex-col gap-3">
             <header className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <span
-                  className="material-symbols-outlined text-[20px] text-cat-blue"
+                  className="material-symbols-outlined text-[20px] text-cat-blue shrink-0"
                   aria-hidden="true"
                 >
                   calendar_month
                 </span>
-                <h2 className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface">
-                  Minha Agenda
-                </h2>
+                <div className="flex flex-col min-w-0">
+                  <h2 className="font-headline text-title-md text-light-on-surface dark:text-dark-on-surface truncate">
+                    Minha Agenda
+                  </h2>
+                  <span className="font-mono text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant tabular-nums">
+                    Agora: {currentTimeLabel}
+                  </span>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={onOpenAgendaModal}
-                aria-label="Adicionar compromisso"
-                className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] -mr-2 rounded-full text-light-on-surface dark:text-dark-on-surface hover:bg-light-surface-container-high dark:hover:bg-dark-surface-container-high transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-light-primary dark:focus-visible:outline-dark-primary"
-              >
-                <span className="material-symbols-outlined text-[20px]">add</span>
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowCalendar((prev) => !prev)}
+                  aria-expanded={showCalendar}
+                  className="min-h-[36px] px-2.5 py-1 rounded-md border border-light-outline-variant dark:border-dark-outline-variant text-light-on-surface-variant dark:text-dark-on-surface-variant hover:text-light-primary dark:hover:text-dark-primary font-body text-label-sm transition-colors"
+                >
+                  {showCalendar ? 'Ocultar mês' : 'Calendário'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenAgendaModal(selectedDate)}
+                  aria-label="Adicionar compromisso"
+                  className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] -mr-2 rounded-full text-light-on-surface dark:text-dark-on-surface hover:bg-light-surface-container-high dark:hover:bg-dark-surface-container-high transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-light-primary dark:focus-visible:outline-dark-primary"
+                >
+                  <span className="material-symbols-outlined text-[20px]">add</span>
+                </button>
+              </div>
             </header>
 
+            {showCalendar && (
+              <div className="rounded-md bg-light-surface-container-lowest dark:bg-dark-surface-container border border-light-outline-variant dark:border-dark-outline-variant p-3 flex flex-col gap-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={handlePrevMonth}
+                    aria-label="Mês anterior"
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-full text-light-on-surface-variant dark:text-dark-on-surface-variant hover:bg-light-surface-container-high dark:hover:bg-dark-surface-container-high transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+                  </button>
+
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <select
+                      aria-label="Selecionar mês"
+                      value={calendarMonth}
+                      onChange={(e) => setCalendarMonth(Number(e.target.value))}
+                      className="rounded bg-transparent font-headline text-label-lg text-light-on-surface dark:text-dark-on-surface px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-light-primary dark:focus:ring-dark-primary"
+                    >
+                      {MONTH_NAMES_PT.map((monthName, idx) => (
+                        <option
+                          key={monthName}
+                          value={idx}
+                          className="bg-light-surface-container-low dark:bg-dark-surface-container-low text-light-on-surface dark:text-dark-on-surface"
+                        >
+                          {monthName}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      aria-label="Selecionar ano"
+                      value={calendarYear}
+                      onChange={(e) => setCalendarYear(Number(e.target.value))}
+                      className="rounded bg-transparent font-mono text-label-lg text-light-primary dark:text-dark-primary tabular-nums px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-light-primary dark:focus:ring-dark-primary"
+                    >
+                      {Array.from({ length: 11 }, (_, i) => currentYear - 3 + i).map((yr) => (
+                        <option
+                          key={yr}
+                          value={yr}
+                          className="bg-light-surface-container-low dark:bg-dark-surface-container-low text-light-on-surface dark:text-dark-on-surface"
+                        >
+                          {yr}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    {(selectedDate !== todayKey ||
+                      calendarMonth !== now.getMonth() ||
+                      calendarYear !== currentYear) && (
+                      <button
+                        type="button"
+                        onClick={handleGoToday}
+                        className="px-2 py-1 rounded text-label-sm font-body text-light-primary dark:text-dark-primary hover:bg-light-primary/10 dark:hover:bg-dark-primary/10"
+                      >
+                        Hoje
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleNextMonth}
+                      aria-label="Próximo mês"
+                      className="inline-flex items-center justify-center w-8 h-8 rounded-full text-light-on-surface-variant dark:text-dark-on-surface-variant hover:bg-light-surface-container-high dark:hover:bg-dark-surface-container-high transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-7 gap-1 text-center">
+                  {WEEKDAY_SHORT_PT.map((wd, idx) => (
+                    <span
+                      key={`${wd}-${idx}`}
+                      className="font-body text-[11px] font-semibold text-light-on-surface-variant dark:text-dark-on-surface-variant py-0.5"
+                    >
+                      {wd}
+                    </span>
+                  ))}
+                  {calendarCells.map((cell) => {
+                    const isToday = cell.dateKey === todayKey;
+                    const isSelected = cell.dateKey === selectedDate;
+                    const hasEvents = agendaDatesWithEvents.has(cell.dateKey);
+                    return (
+                      <button
+                        key={cell.dateKey}
+                        type="button"
+                        onClick={() => {
+                          setSelectedDate(cell.dateKey);
+                          if (!cell.inMonth) {
+                            const [y, m] = cell.dateKey.split('-').map(Number);
+                            setCalendarYear(y);
+                            setCalendarMonth(m - 1);
+                          }
+                        }}
+                        aria-label={`${formatShortDatePtBr(cell.dateKey)}`}
+                        aria-pressed={isSelected}
+                        className={`relative h-8 rounded-md flex flex-col items-center justify-center font-mono text-xs tabular-nums transition-colors ${
+                          isSelected
+                            ? 'bg-light-primary dark:bg-dark-primary text-light-on-primary dark:text-dark-on-primary font-bold'
+                            : isToday
+                              ? 'border border-accent-gold text-accent-gold font-bold'
+                              : cell.inMonth
+                                ? 'text-light-on-surface dark:text-dark-on-surface hover:bg-light-surface-container-high dark:hover:bg-dark-surface-container-high'
+                                : 'text-light-on-surface-variant/40 dark:text-dark-on-surface-variant/40'
+                        }`}
+                      >
+                        <span>{cell.day}</span>
+                        {hasEvents && (
+                          <span
+                            className={`absolute bottom-0.5 w-1 h-1 rounded-full ${
+                              isSelected
+                                ? 'bg-light-on-primary dark:bg-dark-on-primary'
+                                : 'bg-accent-gold'
+                            }`}
+                            aria-hidden="true"
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <p className="font-body text-body-sm text-light-primary dark:text-dark-primary tabular-nums">
-                  15 de Julho de 2026
+                  {selectedDate === todayKey ? 'Hoje · ' : ''}
+                  {formatShortDatePtBr(selectedDate)}
+                  {!showCalendar ? ` (${formatMonthYearPtBr(calendarYear, calendarMonth)})` : ''}
                 </p>
                 {completedAgendaCount > 0 && (
                   <span className="font-body text-label-sm text-light-on-surface-variant dark:text-dark-on-surface-variant tabular-nums">
@@ -373,8 +604,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
               </div>
 
               {sortedAgenda.length === 0 ? (
-                <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant py-3">
-                  Nenhum compromisso agendado. Toque em + para adicionar.
+                <p className="font-body text-body-sm text-light-on-surface-variant dark:text-dark-on-surface-variant py-2">
+                  Nenhum compromisso para {selectedDate === todayKey ? 'hoje' : formatShortDatePtBr(selectedDate)}. Toque em + para adicionar.
                 </p>
               ) : (
                 <ul className="flex flex-col gap-1">
